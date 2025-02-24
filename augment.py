@@ -5,6 +5,7 @@ import subprocess
 import os
 import fal_client
 import json
+# for image generation
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from io import BytesIO
