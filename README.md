@@ -53,4 +53,4 @@ Contributions are welcome! Please submit a Pull Request or report issues.
 This project is licensed under the MIT License.
 
 ## Contact
-For any questions, please contact [your email].
+For any questions, please contact junwei.quan@mail.utoronto.ca
