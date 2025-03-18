@@ -1,4 +1,4 @@
-# Project Name
+# LEGOS-TRAVERSE
 
 ## Introduction
 This project aims to analyze and process rules using the SLEEC rules analysis and LTS generation pipeline. It includes multiple modules and functionalities to support rule parsing, analysis, defining mutual exclusivity, and generating LTS format transitions.
