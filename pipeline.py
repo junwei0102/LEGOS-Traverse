@@ -5,10 +5,10 @@ import os
 import json
 import time
 
-# 设置页面配置
+# set page config
 st.set_page_config(
     page_title="SLEEC Rules Analysis Pipeline",
-    layout="wide",  # 使用宽布局
+    layout="wide",  # use wide layout
     initial_sidebar_state="auto",
     menu_items={
         'Get Help': None,
@@ -17,11 +17,11 @@ st.set_page_config(
     }
 )
 
-# 添加自定义CSS来优化滚动条和布局
+# add custom CSS to optimize scrollbar and layout
 st.markdown("""
     <style>
         .main .block-container {
-            max-width: 95%;  # 增加内容区域宽度
+            max-width: 95%;  # increase content area width
             padding-top: 1rem;
             padding-bottom: 1rem;
         }
@@ -35,7 +35,7 @@ st.markdown("""
         }
         .streamlit-expanderContent {
             overflow: auto;
-            max-height: 500px;  # 设置展开内容的最大高度
+            max-height: 500px;  # set maximum height of expanded content
         }
     </style>
 """, unsafe_allow_html=True)
@@ -94,7 +94,7 @@ def run_pipeline():
         # Analyze rules
         rules_by_response, rule_responses, rules_full_text = extract_responses(sleec_content)
         
-        # 显示原始内容
+        # show original content
         with st.expander("Show Original SLEEC Content"):
             st.code(sleec_content)
         
@@ -104,11 +104,11 @@ def run_pipeline():
             shared_groups = {resp: rules for resp, rules in rules_by_response.items() 
                            if len(rules) > 1}
             
-            # 添加用户选择部分
+            # add user selection part
             selected_groups = {}
             for response, rules in shared_groups.items():
                 with st.expander(f"Response: {response} ({len(rules)} rules)"):
-                    # 分别显示主要响应和unless子句中的响应
+                    # show main response and unless clause response
                     main_rules = [r for r in rules if " (unless)" not in r]
                     unless_rules = [r.replace(" (unless)", "") for r in rules if " (unless)" in r]
                     
@@ -126,22 +126,22 @@ def run_pipeline():
                             if rule in rules_full_text:
                                 st.code(rules_full_text[rule])
                     
-                    # 添加复选框让用户选择是否包含这组规则，默认选中
+                    # add checkbox to let user select whether to include this group of rules, default selected
                     if st.checkbox(f"Include rules with response '{response}'", value=True, key=f"include_{response}"):
                         selected_groups[response] = rules
             
             # Save analysis result to session state
-            if selected_groups:  # 使用用户选择的组而不是所有组
+            if selected_groups:  # use user selected groups instead of all groups
                 st.session_state['analysis_result'] = {
                     'type': 'shared_responses',
-                    'groups': selected_groups,  # 使用选中的组
+                    'groups': selected_groups,  # use selected groups
                     'rules_full_text': rules_full_text
                 }
-                # 显示生成的SLEEC文件内容
+                # show generated SLEEC file content
                 sleec_output = generate_sleec_file(selected_groups, rules_full_text, True, sleec_content)
                 with st.expander("Show Generated SLEEC File Content"):
                     st.code(sleec_output)
-                # 保存生成的文件
+                # save generated file
                 with open("generated_rules.sleec", "w") as f:
                     f.write(sleec_output)
                 st.success("Generated SLEEC file saved as 'generated_rules.sleec'")
@@ -192,11 +192,11 @@ def run_pipeline():
                         'groups': exclusive_groups,
                         'rules_full_text': rules_full_text
                     }
-                    # 显示生成的SLEEC文件内容
+                    # show generated SLEEC file content
                     sleec_output = generate_sleec_file(exclusive_groups, rules_full_text, False, sleec_content)
                     with st.expander("Show Generated SLEEC File Content"):
                         st.code(sleec_output)
-                    # 保存生成的文件
+                    # save generated file
                     with open("generated_rules.sleec", "w") as f:
                         f.write(sleec_output)
                     st.success("Generated SLEEC file saved as 'generated_rules.sleec'")
@@ -258,7 +258,7 @@ def run_pipeline():
                         'rules_full_text': rules_full_text
                     }
                     
-                    # 生成SLEEC文件内容
+                    # generate SLEEC file content
                     content = []
                     content.append("// Rules sharing specified measures:")
                     for measure in target_measures:
@@ -267,7 +267,7 @@ def run_pipeline():
                         if rule in rules_full_text:
                             content.append(rules_full_text[rule])
                     
-                    # 保存生成的文件
+                    # save generated file
                     sleec_output = generate_sleec_file(content, rules_full_text, True, sleec_content)
                     
                     with st.expander("Show Generated SLEEC File Content"):

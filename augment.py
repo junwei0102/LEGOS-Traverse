@@ -6,7 +6,7 @@ import re
 import subprocess
 import fal_client
 import json
-import time  # 添加time模块
+import time 
 # for image generation
 from PIL import Image, ImageDraw, ImageFont
 import requests
@@ -22,7 +22,7 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-# 添加自定义CSS来优化滚动条和布局
+# add custom css to optimize scrollbar and layout
 st.markdown("""
     <style>
         .main .block-container {
@@ -83,14 +83,14 @@ if 'initialized' not in st.session_state:
     st.session_state['character_image_url'] = None
     st.session_state['generated_scenes'] = None
     st.session_state['scene_evaluations'] = None
-    st.session_state['api_choice'] = 'OpenAI'  # 默认使用 OpenAI
-    st.session_state['page_key'] = 0  # 添加页面键以避免重复渲染
+    st.session_state['api_choice'] = 'OpenAI'  # default use OpenAI
+    st.session_state['page_key'] = 0  # add page key to avoid duplicate rendering
 
-# 在文件开头的import部分后添加
+# add default deepseek base url
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 def get_translated_lts():
-    """获取已转换的LTS内容"""
+    """get translated lts content"""
     try:
         if os.path.exists('input_lts.aut'):
             with open('input_lts.aut', 'r') as f:
@@ -172,9 +172,9 @@ def extract_mapping(response):
     return None
 
 def extract_scene_info(response):
-    """从响应中提取场景标签和时间信息"""
+    """extract scene label and time information from response"""
     try:
-        # 首先找到"Scene Label and Time:"部分
+        # first find "Scene Label and Time:" part
         scene_section_pattern = r'Scene Label and Time:(.*?)(?=\n\s*\n|Verification & Justification|$)'
         scene_section = re.search(scene_section_pattern, response, re.DOTALL)
         
@@ -182,16 +182,16 @@ def extract_scene_info(response):
             st.error("Could not find Scene Label and Time section")
             return None
             
-        # 提取所有场景信息
+        # extract all scene information
         scene_lines = scene_section.group(1).strip().split('\n')
-        # 过滤并清理每一行
+        # filter and clean each line
         scene_info = [line.strip() for line in scene_lines if line.strip() and line.strip().startswith('Scene')]
         
         if not scene_info:
             st.error("No valid scene information found")
             return None
             
-        # 返回所有场景信息
+        # return all scene information
         return '\n'.join(scene_info)
         
     except Exception as e:
@@ -199,10 +199,10 @@ def extract_scene_info(response):
         return None
 
 def generate_prompt(input_lts):
-    # 获取案例研究上下文（如果有）
+    # get case study context (if any)
     case_study_context = st.session_state.get('case_study_context', '')
     
-    # 如果有上下文，添加到提示中
+    # if there is context, add to prompt
     context_section = ""
     if case_study_context:
         context_section = f"""
@@ -228,11 +228,8 @@ Context for case study for reference:
 
 ### Critical Timing Requirement:
 - **Choose a realistic starting time based on the context and nature of events** (e.g., medical procedures might start at 8:00am or 9:00am, not 6:30am unless specifically required).
-- **All original transitions in the input LTS with the same pseudo time=X in the measures must have the same augmented time.**
-    - For example, if two original transitions both have time=0 in the measures in input LTS, they must both be augmented with the same time, such as [CLOCK: 8:00am].
-    - If an event has time=300, it must occur exactly 5 minutes after events with time=0.
-    - This is **highly important** and must be strictly followed, even if state transition seems to not happen at the same time.
 - **Use realistic waiting times between events** that reflect the actual time needed for such activities.
+- **Ensure that the time intervals between augmented transitions reflect the pseudo time intervals specified in the original LTS, where `time=X` is in seconds.** For example, if a transition with `time=301` follows transitions with `time=1`, the augmented transition should occur approximately 300 seconds (or 5 minutes) after the previous transition.
 
 ### Formal Requirements:
 1. Timing Consistency:
@@ -240,18 +237,18 @@ Context for case study for reference:
    - All state transitions must follow a non-decreasing temporal ordering. That is, the next transition must happen after the previous one or at the same time when they have the same pseudo time=X in the measures in original LTS.
    - Introduce contextual waiting times where appropriate that reflect realistic durations (e.g., time to dress before opening the window, time for a medical procedure).
    - Differentiate between simultaneous vs. sequential events.
-   - Events with time=X must occur exactly X seconds after events with time=0.
-   - New transitions must not add time=X in the measures. Maintaining non-decreasing temporal ordering is enough.
-   - Time=X is only allowed in original transitions.
+   - Events with `time=X` should be around X seconds after events with `time=0`. For example, if `time=60`, the event should be around 60 seconds after the event with `time=0`.
+   - New transitions must not add `time=X` in the measures. Maintaining non-decreasing temporal ordering is enough.
+   - `time=X` is only allowed in original transitions.
    - For augmented original transitions and new transitions, you must add [CLOCK: time] in the augmented transition label.
    - The [CLOCK: time] in the next transition must be later or equal to the [CLOCK: time] in the previous transition.
-   - You should pick appropriate and realistic time for the augmented transition label, both starting time and duration tima and time difference between events.
+   - You should pick appropriate and realistic time for the augmented transition label, both starting time and duration time and time difference between events.
 
 2. Social Norm Adherence (NORMBANK Framework):
    - Assign each action one of the following norm labels:
      - expected: Commonly accepted behavior.
      - okay: Permissible but context-dependent.
-     - unexpected: Forbidden or socially inappropriate.
+     - unexpected: Forbidden or socially inappropriate. E.g. patient behave aggressively in the hospital, light is not on, these are measures not appropriate; Or event itself is not socially appropriate like robot is asking human to go cooking.
    - Use SCENE constraints:
      - Setting (e.g., home, office, hospital)
      - Environment (e.g., morning, crowded, quiet)
@@ -259,6 +256,7 @@ Context for case study for reference:
      - Attributes (e.g., age, health condition, preferences)
      - Behaviors (e.g., requesting, waiting, interacting)
    - Ensure unexpected behaviors are justified or corrected via AI intervention.
+   - Add SCENE constraints to the measures if necessary for future image generation.
 
 3. Safety & Traceability:
    - State Invariants: Critical safety properties (e.g., dressing before opening the window) must hold.
@@ -277,8 +275,8 @@ Context for case study for reference:
 6. The Criteria for Adding New Transitions:
    - A new transition should be added if it makes the LTS more realistic and norm-compliant.
    - A new transition should be added if it makes the LTS more trace-equivalent to the original LTS.
-   - When adding new transitions with new events, ensure event name and meaures should be different and meaningful so it could help to make scenarios transition more realistic and norm-compliant, i.e. please pick appropriate event name and measures.
-
+   - When adding new transitions with new events, ensure event name and measures should be different and meaningful so it could help to make scenarios transition more realistic and norm-compliant, i.e. please pick appropriate event name and measures.
+   
 ###Approach - CLOCK-BASED TIMING (Norm-Aware Augmentation)
 Example1:
 Input LTS:
@@ -477,10 +475,10 @@ def run_equivalence_check():
         raise
 
 def generate_scene_prompts(lts_content):
-    # 获取案例研究上下文（如果有）
+    # get case study context (if any)
     case_study_context = st.session_state.get('case_study_context', '')
     
-    # 如果有上下文，添加到提示中
+    # if there is context, add to prompt
     context_section = ""
     if case_study_context:
         context_section = f"""
@@ -498,7 +496,7 @@ Focus on creating scenes that clearly illustrate the state transitions and measu
 {context_section}
 IMPORTANT CLARIFICATION:
 - The notation 'time=X' is a PSEUDO TIME indicating relative timing from the initial event (e.g., 'time=300' means 5 minutes after 'time=0').
-- DO NOT interpret 'time=X' as a countdown or any other meaning. For the event with same pseudo time=X, the time should be approximately the same, you can choose time that is realistic.  
+- DO NOT interpret 'time=X' as a countdown or any other meaning. For the event with same pseudo time=X, the time should be approximately the same, you can choose time that is realistic. The unit of time is second. 
 - Ensure the generated REAL TIME (e.g., 8:40am) strictly matches the relative relationship indicated by the pseudo time.
 - Use REALISTIC starting times based on the context (e.g., medical procedures typically start at 8:00am or 9:00am, not 6:30am).
 - Ensure waiting times between events are realistic and reflect the actual time needed for such activities.
@@ -567,11 +565,11 @@ Remember:
     return prompt
 
 def generate_user_friendly_descriptions(api_key, lts_content, api_choice='OpenAI', base_url=None):
-    """生成用户友好的场景描述，专注于用户和系统之间的交互，而不是详细的场景描述"""
-    # 获取案例研究上下文（如果有）
+    """generate user-friendly scene descriptions, focusing on the interaction between user and system, not detailed scene descriptions"""
+    # get case study context (if any)
     case_study_context = st.session_state.get('case_study_context', '')
     
-    # 如果有上下文，添加到提示中
+    # if there is context, add to prompt
     context_section = ""
     if case_study_context:
         context_section = f"""
@@ -615,26 +613,26 @@ Remember:
     return parse_user_friendly_descriptions(response)
 
 def parse_user_friendly_descriptions(response):
-    """解析用户友好的描述"""
+    """parse user-friendly descriptions"""
     try:
-        # 获取描述部分
+        # get description part
         parts = response.split('USER FRIENDLY DESCRIPTIONS:')
         if len(parts) != 2:
             raise Exception("Invalid response format: missing USER FRIENDLY DESCRIPTIONS section")
             
         desc_text = parts[1].strip()
         
-        # 使用正则表达式匹配描述
+        # use regex to match description
         desc_pattern = r'(\d+)\.\s+([^–]+)–\s*(.+?)(?=\d+\.\s+|$)'
         descriptions = re.findall(desc_pattern, desc_text, re.DOTALL)
         
         parsed_descriptions = []
         for desc_num, header, description in descriptions:
-            # 清理描述
+            # clean description
             header = header.strip()
             description = description.strip()
             
-            # 从头部提取事件名称、时间和位置
+            # extract event name, time, and location from header
             header_match = re.search(r'([^\(]+)\s*\(([^,]+),\s*([^\)]+)\)', header)
             if header_match:
                 event_name = header_match.group(1).strip()
@@ -664,36 +662,36 @@ def parse_user_friendly_descriptions(response):
         return []
 
 def parse_scene_descriptions(prompts):
-    """解析场景描述，直接使用场景编号和星号之间的内容作为标签"""
+    """parse scene descriptions, directly use the content between scene number and star as label"""
     try:
-        # 直接获取场景描述部分
+        # directly get scene description part
         parts = prompts.split('SCENE DESCRIPTIONS:')
         if len(parts) != 2:
             raise Exception("Invalid prompt format: missing SCENE DESCRIPTIONS section")
             
         scene_text = parts[1].strip()
         
-        # 使用简单的正则表达式匹配场景编号和星号之间的内容
-        # 格式: "1. **EventName 6:30am**: Description"
+        # use simple regex to match content between scene number and star
+        # format: "1. **EventName 6:30am**: Description"
         scene_pattern = r'(\d+)\.\s+\*\*([^*]+)\*\*:\s*(.+?)(?=\d+\.\s+\*\*|$)'
         scenes = re.findall(scene_pattern, scene_text, re.DOTALL)
         
         parsed_scenes = []
         for scene_num, scene_label, scene_desc in scenes:
-            # 清理场景标签和描述
+            # clean scene label and description
             scene_label = scene_label.strip()
             scene_desc = scene_desc.strip()
             
-            # 从场景标签中提取时间
+            # extract time from scene label
             time_match = re.search(r'(\d+:\d+[ap]m)', scene_label)
             scene_time = time_match.group(1) if time_match else "unknown"
             
-            # 将场景标签和时间作为场景名称
+            # use scene label and time as scene name
             scene_name = scene_label
             
             parsed_scenes.append((scene_name, scene_time, scene_desc))
             
-            # 调试输出
+            # debug output
             st.write(f"Scene {scene_num}:")
             st.write(f"  Name: {scene_name}")
             st.write(f"  Time: {scene_time}")
@@ -706,17 +704,17 @@ def parse_scene_descriptions(prompts):
             
     except Exception as e:
         st.error(f"Error parsing scene descriptions: {str(e)}")
-        # Debug输出原始文本
+        # debug output original text
         st.write("Debug - Original scene text:")
         st.text(scene_text)
         return []
 
 def generate_flux_pro(api_key, prompt, image_size="landscape_16_9"):
     try:
-        # 设置环境变量
+        # set environment variable
         os.environ['FAL_KEY'] = api_key
         
-        # 添加机器人外观描述
+        # add robot appearance description
         enhanced_prompt = f"""
 {prompt}
 
@@ -725,12 +723,12 @@ IMPORTANT: The robot must have a SCREEN as its FACE/HEAD that displays content r
 SCREEN CONTENT: The screen MUST display CLEAR, LEGIBLE TEXT related to the current action. The text must be LARGE, with HIGH CONTRAST against the screen background (e.g., white or bright text on dark background, or dark text on light background), and should be the focal point of the robot's face.
 """
         
-        # 调用API
+        # call api
         result = fal_client.subscribe(
             "fal-ai/flux-pro/v1.1-ultra",
             arguments={
                 "prompt": enhanced_prompt,
-                "image_size": image_size,  # 使用预定义的尺寸
+                "image_size": image_size,  # use predefined size
                 "num_images": 1,
                 "output_format": "jpeg",
                 "negative_prompt": "cartoon, anime, illustration, painting, artistic, stylized, unnatural colors, oversaturated, low quality, blurry, deformed, human-like robot face, robot with human features, blurry text, illegible text, small text"
@@ -984,7 +982,7 @@ def display_evaluation_results(evaluations, col2, col3):
         if evaluations and current_page < len(evaluations):
             eval_data = evaluations[current_page]
             
-            # 使用用户友好的描述（如果有）
+            # use user-friendly description (if any)
             if 'user_friendly_desc' in eval_data and eval_data['user_friendly_desc']:
                 st.markdown(f"### {eval_data['user_friendly_desc']}")
             else:
@@ -993,7 +991,7 @@ def display_evaluation_results(evaluations, col2, col3):
             st.markdown(f"**Time:** {eval_data['scene_time']}")
             st.markdown(f"**Measures:** {eval_data['measures']}")
             
-            # 显示详细的图像生成提示（隐藏在可展开部分）
+            # show detailed image generation prompt (hidden in expandable part)
             with st.expander("Show detailed image generation prompt"):
                 st.markdown("**Detailed Description:**")
                 st.markdown(f"*{eval_data['scene_desc']}*")
@@ -1016,14 +1014,14 @@ def display_final_results(col3, generated_scenes):
         # Get scene labels and time information
         scene_info = get_scene_labels()
         
-        # 获取场景评估数据（包含用户友好的描述）
+        # get scene evaluations data (contains user-friendly descriptions)
         scene_evaluations = st.session_state.get('scene_evaluations', [])
         
         # Display images (automatically add labels)
         for i, (desc, url) in enumerate(generated_scenes):
             scene_num = i + 1
             
-            # 尝试从场景评估数据中获取用户友好的描述
+            # try to get user-friendly description from scene evaluations data
             user_friendly_desc = None
             if scene_evaluations and i < len(scene_evaluations):
                 user_friendly_desc = scene_evaluations[i].get('user_friendly_desc')
@@ -1038,13 +1036,13 @@ def display_final_results(col3, generated_scenes):
             else:
                 st.markdown(f"**Scene {scene_num}**")
             
-            # 显示详细描述（隐藏在可展开部分）
+            # show detailed description (hidden in expandable part)
             with st.expander("Show detailed description"):
                 st.markdown(f"*{desc}*")
             
             if url:
                 if scene_num in scene_info:
-                    # Automatically add labels and timestamp
+                    # automatically add labels and timestamp
                     augmented_img = augment_image_with_label(
                         url,
                         scene_info[scene_num]['label'],
@@ -1098,7 +1096,7 @@ def display_final_results(col3, generated_scenes):
                                 label = scene_info[scene_num]['label']
                                 timestamp = scene_info[scene_num]['time']
                                 
-                                # 使用用户友好的描述（如果有）
+                                # use user-friendly description (if any)
                                 if scene_evaluations and i < len(scene_evaluations) and scene_evaluations[i].get('user_friendly_desc'):
                                     label = scene_evaluations[i]['user_friendly_desc']
                                 
@@ -1157,15 +1155,15 @@ def display_final_results(col3, generated_scenes):
                     )
 
 def regenerate_scene(current_page, scene_num, scene_desc, event_name, measures, scene_time):
-    """重新生成特定场景的图像"""
+    """regenerate image for specific scene"""
     try:
-        # 获取API密钥
+        # get api key
         fal_api_key = st.session_state.get('fal_api_key')
         if not fal_api_key:
             st.error("FAL API key not found. Please re-enter your API key.")
             return False
         
-        # 获取当前场景的用户友好描述（如果有）
+        # get user-friendly description for current scene (if any)
         user_friendly_desc = None
         if 'scene_evaluations' in st.session_state and st.session_state['scene_evaluations']:
             evaluations = st.session_state['scene_evaluations']
@@ -1173,33 +1171,33 @@ def regenerate_scene(current_page, scene_num, scene_desc, event_name, measures, 
                 user_friendly_desc = evaluations[current_page].get('user_friendly_desc')
         
         with st.spinner(f"Regenerating scene {scene_num}..."):
-            # 构建完整的标签，确保包含事件和度量
+            # build full label, ensure it contains event and measures
             full_label = f"{event_name}"
             if measures:
                 full_label += f" ({measures})"
             
-            # 直接使用FAL生成场景图像
+            # directly generate scene image with FAL
             image_url = generate_scene_with_fal(fal_api_key, scene_desc, event_name, measures)
             
             if image_url:
-                # 为图像添加标签（事件名称和时间）
+                # add label to image (event name and time)
                 augmented_img = augment_image_with_label(image_url, full_label, scene_time)
                 
-                # 更新session state中的场景评估数据
+                # update scene evaluations data in session state
                 if 'scene_evaluations' in st.session_state and st.session_state['scene_evaluations']:
                     evaluations = st.session_state['scene_evaluations']
                     if current_page < len(evaluations):
                         evaluations[current_page]['image_url'] = image_url
                 
-                # 更新session state中的生成场景数据
+                # update generated scenes data in session state
                 if 'generated_scenes' in st.session_state and st.session_state['generated_scenes']:
                     generated_scenes = st.session_state['generated_scenes']
                     if current_page < len(generated_scenes):
                         generated_scenes[current_page] = (scene_desc, image_url)
                 
-                # 显示生成的图像
+                # show generated image
                 with st.spinner("Updating display..."):
-                    # 使用用户友好的描述（如果有）
+                    # use user-friendly description (if any)
                     display_label = user_friendly_desc if user_friendly_desc else full_label
                     
                     st.success(f"Successfully regenerated scene {scene_num}")
@@ -1212,7 +1210,7 @@ def regenerate_scene(current_page, scene_num, scene_desc, event_name, measures, 
                         st.image(image_url)
                         st.warning(f"Failed to add labels to scene {scene_num}")
                 
-                # 刷新页面以显示更新后的图像
+                # refresh page to show updated image
                 st.rerun()
                 
                 return True
@@ -1225,10 +1223,10 @@ def regenerate_scene(current_page, scene_num, scene_desc, event_name, measures, 
         return False
 
 def generate_timetable(api_key, lts_content):
-    # 获取案例研究上下文（如果有）
+    # get case study context (if any)
     case_study_context = st.session_state.get('case_study_context', '')
     
-    # 如果有上下文，添加到提示中
+    # if there is context, add to prompt
     context_section = ""
     if case_study_context:
         context_section = f"""
@@ -1265,16 +1263,16 @@ LTS Content:
     return json.loads(response)
 
 def extract_timestamp(transition_label):
-    """从转换标签中提取时间戳"""
+    """extract timestamp from transition label"""
     time_match = re.search(r'time=(\d+:\d+[ap]m)', transition_label, re.IGNORECASE)
     if time_match:
         return time_match.group(1)
     return None
 
 def extract_transition_info(lts_content):
-    """从LTS内容中提取转换信息"""
+    """extract transition information from LTS content"""
     transitions = []
-    # 匹配转换行: (state,"label",next_state)
+    # match transition line: (state,"label",next_state)
     pattern = r'\((\d+),"([^"]+)",(\d+)\)'
     matches = re.findall(pattern, lts_content)
     
@@ -1282,7 +1280,7 @@ def extract_transition_info(lts_content):
         state, label, next_state = match
         timestamp = extract_timestamp(label)
         if timestamp:
-            # 提取转换名称和度量信息
+            # extract transition name and measures information
             event_match = re.search(r'([^\(]+)\s*(?:\(([^\)]+)\))?', label)
             if event_match:
                 name = event_match.group(1).strip()
@@ -1302,40 +1300,40 @@ def extract_transition_info(lts_content):
     return {'transitions': transitions}
 
 def augment_image_with_label(image_url, label, timestamp):
-    """为图片添加标签和时间戳，确保标签包含事件和度量信息"""
+    """add label and timestamp to image, ensure label contains event and measures information"""
     try:
-        # 下载图片
+        # download image
         response = requests.get(image_url)
         img = Image.open(BytesIO(response.content))
         
-        # 创建绘图对象
+        # create drawing object
         draw = ImageDraw.Draw(img)
         
-        # 设置字体（如果没有Arial则使用默认字体）
-        font_size = 48  # 增加字体大小
+        # set font (use default font if Arial is not available)
+        font_size = 48  # increase font size
         try:
             font = ImageFont.truetype("Arial.ttf", font_size)
         except:
             try:
-                # 尝试使用系统默认字体
+                # try to use system default font
                 font = ImageFont.truetype("DejaVuSans.ttf", font_size)
             except:
                 font = ImageFont.load_default()
         
-        # 确保标签包含事件和度量信息
+        # ensure label contains event and measures information
         if '(' not in label and ')' not in label:
-            # 如果标签中没有括号，尝试提取事件名称
+            # if label does not contain parentheses, try to extract event name
             event_name = label.strip()
             label = f"{event_name} (no measures)"
         
-        # 准备文本
+        # prepare text
         text = f"Event: {label}\nTime: {timestamp}"
         
-        # 添加文本（白色文字带黑色边框）
-        x, y = 20, 20  # 文本位置，稍微远离边缘
-        border = 3  # 增加边框粗细
+        # add text (white text with black border)
+        x, y = 20, 20  # text position, slightly away from edge
+        border = 3  # increase border thickness
         
-        # 添加半透明背景以增强可读性
+        # add semi-transparent background to enhance readability
         text_bbox = draw.textbbox((x, y), text, font=font)
         padding = 15
         background_bbox = (
@@ -1345,31 +1343,31 @@ def augment_image_with_label(image_url, label, timestamp):
             text_bbox[3] + padding
         )
         
-        # 在文本下方创建半透明黑色背景
+        # create semi-transparent black background below text
         overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
         overlay_draw = ImageDraw.Draw(overlay)
-        overlay_draw.rectangle(background_bbox, fill=(0, 0, 0, 160))  # 更不透明的黑色背景
+        overlay_draw.rectangle(background_bbox, fill=(0, 0, 0, 160))  # more opaque black background
         
-        # 将原图转换为RGBA模式（如果不是）
+        # convert original image to RGBA mode (if not already)
         if img.mode != 'RGBA':
             img = img.convert('RGBA')
         
-        # 合并图层
+        # merge layers
         img = Image.alpha_composite(img, overlay)
         
-        # 重新绘制文本（因为合并图层后原来的文本可能被覆盖）
+        # redraw text (because original text may be covered after merging layers)
         draw = ImageDraw.Draw(img)
-        # 绘制黑色边框
+        # draw black border
         for dx in range(-border, border+1):
             for dy in range(-border, border+1):
                 if dx != 0 or dy != 0:
                     draw.text((x+dx, y+dy), text, font=font, fill='black')
-        # 绘制白色文本
+        # draw white text
         draw.text((x, y), text, font=font, fill='white')
         
-        # 转换为字节流
+        # convert to byte stream
         img_byte_arr = BytesIO()
-        img = img.convert('RGB')  # 转换回RGB模式以保存为JPEG
+        img = img.convert('RGB')  # convert back to RGB mode to save as JPEG
         img.save(img_byte_arr, format='JPEG', quality=95)
         img_byte_arr.seek(0)
         
@@ -1383,7 +1381,7 @@ def augment_image_with_label(image_url, label, timestamp):
         return None
 
 def get_scene_labels():
-    """从augment_image.txt读取场景标签和时间信息"""
+    """read scene labels and time information from augment_image.txt"""
     try:
         if not os.path.exists('augment_image.txt'):
             st.error("augment_image.txt file not found")
@@ -1391,21 +1389,21 @@ def get_scene_labels():
             
         with open('augment_image.txt', 'r') as f:
             content = f.read()
-            # st.write("Debug - Scene Labels Content:", content)  # 调试信息
+            # st.write("Debug - Scene Labels Content:", content)  # debug information
         
-        # 直接从文件中解析场景标签
+        # directly parse scene labels from file
         scene_info = {}
-        # 分割场景
+        # split scenes
         scene_pattern = r'Scene\s+(\d+):\s*(.*?)(?=Scene\s+\d+:|$)'
         scenes = re.findall(scene_pattern, content, re.DOTALL)
         
         for scene_num_str, scene_content in scenes:
             try:
-                # 提取场景编号和内容
+                # extract scene number and content
                 scene_num = int(scene_num_str)
                 scene_label = scene_content.strip()
                 
-                # 从场景标签中提取时间
+                # extract time from scene label
                 time_match = re.search(r'(\d+:\d+[ap]m)', scene_label)
                 time = time_match.group(1) if time_match else "unknown"
                 
@@ -1414,7 +1412,7 @@ def get_scene_labels():
                     'time': time
                 }
                 # st.write(f"Debug - Parsed Scene {scene_num}:", 
-                #        f"Label: {scene_label}, Time: {time}")  # 调试信息
+                #        f"Label: {scene_label}, Time: {time}")  # debug information
             except Exception as e:
                 st.error(f"Error parsing scene {scene_content.strip()}: {str(e)}")
                 continue
@@ -1429,9 +1427,9 @@ def get_scene_labels():
         return {}
 
 def call_llm_api(api_key, prompt, api_choice='OpenAI', base_url=None):
-    """统一的 LLM API 调用函数"""
+    """unified LLM API call function"""
     try:
-        # 如果没有提供base_url，尝试从session state获取
+        # if base_url is not provided, try to get it from session state
         if api_choice == 'DeepSeek' and not base_url:
             base_url = st.session_state.get('base_url')
             if not base_url:
@@ -1445,7 +1443,7 @@ def call_llm_api(api_key, prompt, api_choice='OpenAI', base_url=None):
             model = "deepseek-chat"
 
         try:
-            # 添加更明确的系统提示
+            # add more specific system prompt
             system_prompt = "You are an expert in formal process modeling and image generation prompts. Always respond in the exact format requested, especially when JSON format is required."
             if "JSON" in prompt:
                 system_prompt += " Your response must be a valid JSON object with no additional text before or after."
@@ -1483,28 +1481,28 @@ def call_llm_api(api_key, prompt, api_choice='OpenAI', base_url=None):
 
 def change_page(delta):
     st.session_state['current_page'] += delta
-    st.session_state['page_key'] += 1  # 更新页面键
+    st.session_state['page_key'] += 1  # update page key
 
 def main():
     st.title("LTS Augmentation Tool")
     st.markdown("---")
     
-    # 获取已转换的LTS内容
+    # get translated LTS content
     initial_lts = get_translated_lts()
     
-    # 创建三列布局
+    # create three-column layout
     col1, col2, col3 = st.columns(3)
     
     with col1:
         st.subheader("Original LTS")
-        # 使用获取到的LTS内容作为初始值
+        # use translated LTS content as initial value
         lts_content = st.text_area(
             "Input LTS in .aut format:",
             value=initial_lts,
             height=300
         )
         
-        # 添加案例研究上下文输入区域
+        # add case study context input area
         st.subheader("Case Study Context (Optional)")
         case_study_context = st.text_area(
             "Enter context about the system being modeled (e.g., robot description, environment, etc.):",
@@ -1512,27 +1510,27 @@ def main():
             height=200,
             help="This context will be used to guide the generation of augmented LTS and image prompts."
         )
-        # 保存到session state
+        # save to session state
         st.session_state['case_study_context'] = case_study_context
         
-        # API 选择和配置区域
+        # API selection and configuration area
         st.subheader("API Configuration")
         
-        # API 选择
+        # API selection
         api_choice = st.radio(
             "Choose API Provider:",
             ["OpenAI", "DeepSeek"],
             key="api_choice"
         )
         
-        # API 密钥输入
+        # API key input
         api_key = st.text_input(
             "API Key:",
             type="password",
             help="Enter your API key"
         )
         
-        # 如果选择DeepSeek，显示base URL输入，使用默认值
+        # if DeepSeek is selected, show base URL input, use default value
         if api_choice == "DeepSeek":
             base_url = st.text_input(
                 "Base URL:",
@@ -1541,22 +1539,22 @@ def main():
             )
             st.session_state['base_url'] = base_url
         
-        # FAL API 密钥输入
+        # FAL API key input
         fal_api_key = st.text_input(
             "FAL API Key:",
             type="password",
             help="Enter your FAL API key for image generation"
         )
         
-        # 按钮区域
+        # operations area
         st.subheader("Operations")
         
-        # 创建两行按钮
+        # create two-row buttons
         button_row1_col1, button_row1_col2 = st.columns(2)
         button_row2_col1, button_row2_col2 = st.columns(2)
         
         with button_row1_col1:
-            # Augment LTS按钮
+            # Augment LTS button
             if st.button("Generate Augmented LTS", type="primary"):
                 if not api_key:
                     st.error(f"Please enter your {api_choice} API key.")
@@ -1569,7 +1567,7 @@ def main():
                 try:
                     prompt = generate_prompt(lts_content)
                     
-                    # 保存生成的prompt到文件
+                    # save generated prompt to file
                     with open('generated_prompt.txt', 'w') as f:
                         f.write(prompt)
                     
@@ -1580,10 +1578,10 @@ def main():
                             st.error("Failed to generate response")
                             return
                         
-                        # 保存GPT的响应到session state以供后续使用
+                        # save GPT's response to session state for later use
                         st.session_state.augmented_response = response
                         
-                        # 分块保存GPT的响应到文件
+                        # save GPT's response to file
                         try:
                             with open('gpt_response.txt', 'w', encoding='utf-8') as f:
                                 f.write(response)
@@ -1591,7 +1589,7 @@ def main():
                         except Exception as e:
                             st.error(f"Error saving response: {str(e)}")
                         
-                        # 保存文件并显示结果，传入col2
+                        # save files and display results, pass col2
                         save_to_files(lts_content, response, col2)
                         
                         st.success("Files generated successfully!")
@@ -1602,10 +1600,10 @@ def main():
                     st.text_area("Generated Prompt", value=prompt, height=400, disabled=True)
         
         with button_row1_col2:
-            # Verify Equivalence按钮
+            # Verify Equivalence button
             if st.button("Verify Equivalence"):
                 try:
-                    # 检查必要文件是否存在
+                    # check if necessary files exist
                     required_files = ['l1.aut', 'l2.aut', 'rename.ren']
                     missing_files = [f for f in required_files if not os.path.exists(f)]
                     
@@ -1613,11 +1611,11 @@ def main():
                         st.error(f"Missing required files: {', '.join(missing_files)}")
                         return
                     
-                    # 读取 rename.ren 内容
+                    # read rename.ren content
                     with open('rename.ren', 'r') as f:
                         rename_content = f.read().strip()
                     
-                    # 生成 rename.svl 文件
+                    # generate rename.svl file
                     generate_svl_file(rename_content)
                     
                     with st.spinner("Checking equivalence..."):
@@ -1628,34 +1626,34 @@ def main():
                         else:
                             st.error("The augmented LTS is NOT equivalent to the original LTS!")
                         
-                        # 显示详细输出
+                        # show detailed output
                         st.text_area("Verification Output", output, height=200)
                         
                 except Exception as e:
                     st.error(f"An error occurred during verification: {str(e)}")
         
         with button_row2_col1:
-            # Generate Scenes按钮
+            # Generate Scenes button
             if st.button("Generate Scenes"):
                 if not api_key or not fal_api_key:
                     st.error("Please enter both API keys.")
                     return
                 
-                # 检查并保存API选择和base URL
+                # check and save API selection and base URL
                 api_choice = st.session_state.get('api_choice', 'OpenAI')
                 if api_choice == 'DeepSeek':
                     if not base_url:
                         st.error("Base URL is required for DeepSeek API")
                         return
-                    # 保存base URL到session state
+                    # save base URL to session state
                     st.session_state['base_url'] = base_url
                 
-                # 保存API keys到session state
+                # save API keys to session state
                 st.session_state['fal_api_key'] = fal_api_key
                 st.session_state['openai_api_key'] = api_key
                 
                 try:
-                    # 检查是否已经生成了增强的LTS
+                    # check if augmented LTS has been generated
                     if not os.path.exists('gpt_response.txt'):
                         st.error("Please generate augmented LTS first")
                         return
@@ -1663,17 +1661,17 @@ def main():
                     with open('gpt_response.txt', 'r') as f:
                         gpt_response = f.read()
                     
-                    # 清除之前的结果
+                    # clear previous results
                     st.session_state['scene_evaluations'] = None
                     st.session_state['generated_scenes'] = None
                     st.session_state['current_page'] = 0
                     
-                    # 1. 生成场景提示
+                    # 1. generate scene prompts
                     with st.spinner("Generating scene prompts..."):
-                        # 提取转换信息
+                        # extract transition information
                         transitions = extract_transition_info(lts_content)
                         
-                        # 生成场景提示
+                        # generate scene prompts
                         prompts = call_llm_api(
                             api_key,
                             generate_scene_prompts(gpt_response),
@@ -1689,16 +1687,16 @@ def main():
                             st.error("Generated prompts are not in the correct format")
                             return
                         
-                        # 解析场景描述
+                        # parse scene descriptions
                         scenes = parse_scene_descriptions(prompts)
                         if not scenes:
                             st.error("Failed to parse scene descriptions")
                             return
                         
-                        # 保存场景提示到session state
+                        # save scene prompts to session state
                         st.session_state['scene_prompts'] = prompts
                         
-                        # 显示生成的提示
+                        # show generated prompts
                         with col2:
                             st.subheader("Generated Prompts")
                         st.text_area("Scene Prompts", prompts, height=400)
@@ -1706,18 +1704,18 @@ def main():
                         
                         st.success("Successfully generated scene prompts!")
                         
-                    # 2. 生成场景图片
+                    # 2. generate scene images
                     with st.spinner("Generating scenes..."):
                         generated_scenes = []
                         scene_evaluations = []
                         
-                        # 解析场景描述
+                        # parse scene descriptions
                         scenes = parse_scene_descriptions(st.session_state['scene_prompts'])
                         if not scenes:
                             st.error("Failed to parse scene descriptions")
                             return
                             
-                        # 生成用户友好的描述
+                        # generate user-friendly descriptions
                         user_friendly_descriptions = generate_user_friendly_descriptions(
                             api_key, 
                             gpt_response, 
@@ -1725,7 +1723,7 @@ def main():
                             st.session_state.get('base_url')
                         )
                         
-                        # 创建一个映射，将场景编号映射到用户友好的描述
+                        # create a mapping, map scene number to user-friendly descriptions
                         user_desc_map = {int(desc['number']): desc for desc in user_friendly_descriptions}
                             
                         total_scenes = len(scenes)
@@ -1734,33 +1732,33 @@ def main():
                             scene_num = i + 1
                             st.write(f"Generating scene {scene_num}/{total_scenes}: {scene_name}")
                             
-                            # 从场景名称中提取事件和度量
-                            # 例如: "ExaminingPatient 6:40am (behaviorAggressive=True)"
-                            # 提取事件名称
+                            # extract event name and measures from scene name
+                            # for example: "ExaminingPatient 6:40am (behaviorAggressive=True)"
+                            # extract event name
                             event_match = re.search(r'([^\s\(]+)', scene_name)
                             event_name = event_match.group(1).strip() if event_match else scene_name
                             
-                            # 提取度量信息
+                            # extract measures information
                             measures_match = re.search(r'\(([^\)]+)\)', scene_name)
                             measures = measures_match.group(1).strip() if measures_match else ""
                             
-                            # 构建完整的标签
+                            # build full label
                             full_label = scene_name
                             
-                            # 获取用户友好的描述（如果有）
+                            # get user-friendly description (if any)
                             user_friendly_desc = user_desc_map.get(scene_num, {}).get('full_description', '')
                             if not user_friendly_desc:
-                                # 如果没有找到对应的用户友好描述，使用默认格式
+                                # if no corresponding user-friendly description is found, use default format
                                 user_friendly_desc = f"{event_name} ({scene_time}) – Event description."
                             
-                            # 直接使用FAL生成场景图像
+                            # directly generate scene image with FAL
                             image_url = generate_scene_with_fal(fal_api_key, scene_desc, event_name, measures)
                             
                             if image_url:
-                                # 为图像添加标签（事件名称和时间）
+                                # add labels to image (event name and time)
                                 augmented_img = augment_image_with_label(image_url, full_label, scene_time)
                                 
-                                # 保存生成的场景
+                                # save generated scene
                                 generated_scenes.append((scene_desc, image_url))
                                 scene_evaluations.append({
                                     'scene_number': scene_num,
@@ -1774,7 +1772,7 @@ def main():
                                     'user_friendly_desc': user_friendly_desc
                                 })
                                 
-                                # 显示生成的图像
+                                # show generated image
                                 with col3:
                                     st.subheader(f"Scene {scene_num}: {user_friendly_desc}")
                                     st.markdown(f"*Time: {scene_time}*")
@@ -1798,11 +1796,11 @@ def main():
                                     'user_friendly_desc': user_friendly_desc
                                 })
                         
-                        # 保存生成的场景到session state
+                        # save generated scenes to session state
                         st.session_state['generated_scenes'] = generated_scenes
                         st.session_state['scene_evaluations'] = scene_evaluations
                         
-                        # 生成场景标签文件
+                        # generate scene labels file
                         with open('augment_image.txt', 'w') as f:
                             for i, eval_data in enumerate(scene_evaluations):
                                 scene_num = i + 1
@@ -1813,11 +1811,11 @@ def main():
                 except Exception as e:
                     st.error(f"Error in scene generation: {str(e)}")
     
-    # 如果已经生成了场景，显示分页控制和结果
+    # if scenes have been generated, display pagination control and results
     if 'scene_evaluations' in st.session_state and st.session_state['scene_evaluations']:
         display_evaluation_results(st.session_state['scene_evaluations'], col2, col3)
     
-    # 如果已经生成了场景，显示最终结果
+    # if scenes have been generated, display final results
     if 'generated_scenes' in st.session_state and st.session_state['generated_scenes']:
         display_final_results(col3, st.session_state['generated_scenes'])
 
