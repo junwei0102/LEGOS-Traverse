@@ -108,20 +108,24 @@ def convert_trace_to_lts(trace: List[Dict]) -> str:
     
     return "\n".join(lts)
 
-def generate_lts_from_sleec(sleec_file: str, time_window: int = 15) -> bool:
+def generate_lts_from_sleec(sleec_file: str, time_window: int = 15, rule_ids: List[str] = None) -> bool:
     """
     generate trace from SLEEC file
     
     Args:
         sleec_file: path of SLEEC file
         time_window: time window size
+        rule_ids: list of rule IDs to be triggered (optional)
         
     Returns:
         bool: whether the trace is successfully generated
     """
     try:
         # run LEGOs parser to generate trace
-        output = parse_and_max_trace(sleec_file, tracetime=time_window)
+        if rule_ids:
+            output = parse_and_max_trace(sleec_file, target_rule_ids=rule_ids, tracetime=time_window)
+        else:
+            output = parse_and_max_trace(sleec_file, tracetime=time_window)
         
         # save full output to file
         with open('parser_output.txt', 'w') as f:

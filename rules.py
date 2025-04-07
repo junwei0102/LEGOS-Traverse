@@ -53,6 +53,39 @@ def extract_responses(sleec_content):
     
     return rules_dict, rule_responses, rules_full_text
 
+def extract_rule_ids(sleec_content):
+    """
+    Extract all rule IDs from a SLEEC content file
+    
+    Args:
+        sleec_content: content of SLEEC file
+        
+    Returns:
+        list of rule IDs
+    """
+    rule_ids = []
+    
+    # first split content by line and filter out comment lines
+    valid_lines = []
+    for line in sleec_content.split('\n'):
+        line = line.strip()
+        if line and not line.startswith('//'):
+            valid_lines.append(line)
+    
+    # recombine valid lines
+    valid_content = '\n'.join(valid_lines)
+    
+    # pattern to match any rule name (the word before when)
+    pattern = r'([^\s]+)\s+when'
+    matches = re.finditer(pattern, valid_content)
+    
+    for match in matches:
+        rule_id = match.group(1)
+        if rule_id and rule_id not in rule_ids:
+            rule_ids.append(rule_id)
+    
+    return rule_ids
+
 def find_mutually_exclusive_rules(rules_dict, rule_responses, mutual_exclusive_pairs):
     """find groups of rules with mutually exclusive responses, exclude responses from the same rule, consider complete constraint information of measures"""
     exclusive_groups = []

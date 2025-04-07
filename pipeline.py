@@ -26,15 +26,15 @@ st.markdown("""
             padding-bottom: 1rem;
         }
         .stApp {
-            overflow-x: auto;
-            overflow-y: auto;
+            overflow-x: visible !important;
+            overflow-y: visible !important;
         }
         .element-container {
-            overflow: auto;
+            overflow: visible !important;
             max-height: none !important;
         }
         .streamlit-expanderContent {
-            overflow: auto;
+            overflow: visible !important;
             max-height: 500px;  # set maximum height of expanded content
         }
     </style>
@@ -48,7 +48,7 @@ sys.path.append(legos_dir)
 sys.path.append(analyzer_dir)
 
 from translator import parse_trace
-from rules import extract_responses, extract_measures, find_mutually_exclusive_rules, find_rules_with_measures, generate_sleec_file, extract_measures_from_def
+from rules import extract_responses, extract_measures, find_mutually_exclusive_rules, find_rules_with_measures, generate_sleec_file, extract_measures_from_def, extract_rule_ids
 from legos_integration import generate_lts_from_sleec
 from LEGOs.Analyzer.analyzer import check_property_refining, clear_all, log_fol_formula
 
@@ -85,6 +85,12 @@ def run_pipeline():
                 f.write(sleec_content)
     
     if sleec_content:
+        # Store all rule IDs from the file
+        all_rule_ids = extract_rule_ids(sleec_content)
+        
+        # Store rule IDs in session state for later use
+        st.session_state['all_rule_ids'] = all_rule_ids
+        
         # Analysis type selection
         analysis_type = st.radio(
             "Choose Coverage Criteria",
@@ -290,11 +296,34 @@ def run_pipeline():
                 help="Set the time window for trace generation"
             )
             
+            # Get rule IDs for selective triggering
+            if 'all_rule_ids' in st.session_state:
+                all_rule_ids = st.session_state['all_rule_ids']
+                
+                # Create a multiselect to let user choose rules to trigger
+                selected_rules = st.multiselect(
+                    "Select rules to trigger (leave empty to trigger all rules)",
+                    options=all_rule_ids
+                )
+                
+                if selected_rules:
+                    st.info(f"Will generate trace targeting these rules: {', '.join(selected_rules)}")
+            else:
+                selected_rules = []
+            
             if st.button("Generate Trace"):
                 with st.spinner("Generating trace..."):
                     try:
-                        # Use LEGOS to generate trace
-                        if generate_lts_from_sleec("generated_rules.sleec", time_window):
+                        # Make sure we have the original SLEEC file
+                        original_sleec_file = "temp_rules.sleec"
+                        
+                        # Check if the original file exists, if not create it
+                        if not os.path.exists(original_sleec_file):
+                            with open(original_sleec_file, "w") as f:
+                                f.write(sleec_content)
+                        
+                        # Use LEGOS to generate trace with selected rule IDs, using the ORIGINAL file
+                        if generate_lts_from_sleec(original_sleec_file, time_window, selected_rules):
                             st.success("Successfully generated trace!")
                             
                             # Display SLEEC format trace
