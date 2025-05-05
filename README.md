@@ -1,36 +1,32 @@
 # SLEEC Rules Analysis Pipeline
 
-A pipeline for analyzing SLEEC rules and generating traces that trigger rules.
+A pipeline for analyzing SLEEC rules, extracting insights, and generating traces that trigger specific rules.
 
 ## Directory Structure
 
-The project has been organized into the following structure:
-
 ```
 .
-├── data/
-│   ├── rules/           # SLEEC rule files
-│   ├── examples/        # Example SLEEC files
-│   └── output/
-│       ├── traces/      # Generated traces
-│       └── lts/         # LTS (Labeled Transition System) files
-├── LEGOs/               # LEGOS library
-├── src/                 # Source code
-│   ├── pipeline.py      # Main Streamlit application
-│   ├── translator.py    # Trace to LTS translator
-│   ├── rules.py         # Rules extraction and analysis
-│   ├── legos_integration.py # Integration with LEGOs
-│   ├── augment.py       # Augmentation tool
-│   └── test_translator.py # Tests
-└── run_app.py           # Script to run the application
+├── data/                  # Data directory
+│   ├── rules/             # SLEEC rule files
+│   └── output/            # Output directory
+│       ├── traces/        # Generated trace files
+│       └── lts/           # LTS (Labeled Transition System) files
+├── src/                   # Source code
+│   ├── pipeline.py        # Main Streamlit application
+│   ├── translator.py      # Trace to LTS translator
+│   ├── rules.py           # Rule extraction and analysis
+│   └── legos_integration.py  # Integration with LEGOs
+├── LEGOs/                 # LEGOs library (submodule)
+├── requirements.txt       # Project dependencies
+└── run_app.py             # Entry point to run the application
 ```
 
 ## Installation
 
-1. Clone the repository:
+1. Clone the repository with submodules:
    ```
-   git clone https://github.com/yourusername/sleec-rules-pipeline.git
-   cd sleec-rules-pipeline
+   git clone --recursive <repository-url>
+   cd <repository-directory>
    ```
 
 2. Install the required dependencies:
@@ -40,54 +36,33 @@ The project has been organized into the following structure:
 
 ## Usage
 
-Run the application with:
-```
-./run_app.py
-```
-or
+Run the application:
 ```
 python run_app.py
 ```
 
 This will start the Streamlit web interface where you can:
 1. Upload or enter SLEEC rules
-2. Analyze rules by different criteria (shared responses, mutually exclusive responses, shared measures)
+2. Analyze rules based on different criteria:
+   - Shared responses
+   - Mutually exclusive responses
+   - Shared measures
 3. Generate traces that trigger selected rules
-4. Convert traces to LTS format
+4. View and download generated traces and LTS files
 
-## Running the Trace Generator
+## Generating Traces for Specific Rules
 
-The tool can generate traces that trigger specific rules with the command:
+You can generate traces that trigger specific rules using the command line:
 
 ```
-python -m src.legos_integration <sleec_file> <time_window> [rule_ids...]
+python -m src.legos_integration --filename data/rules/your_rules.sleec --analysis max --tracetime 15 --IDs rule1_id rule2_id
 ```
 
-Example:
-```
-python -m src.legos_integration data/rules/example.sleec 15 r2_1 r1_prime
-```
-
-This will generate a trace that triggers rules with IDs r2_1 and r1_prime within 15 seconds.
-
-## Features
-- **Rule Analysis**: Supports analysis of shared responses, mutually exclusive responses, and shared measures.
-- **LTS Generation**: Generates LTS format transitions from SLEEC files.
-- **Image Augmentation**: Processes images and scene labels through `augment.py`.
-
-## API Requirements
-- **OpenAI API**: Required for generating user-friendly descriptions and other functionalities.
-- **DeepSeek API**: Utilized for specific data processing tasks.
-- **FAL Model API**: Used for scene generation and evaluation.
-
-## Dependencies
-- **LEGOs Repository**: This project depends on the LEGOs library. Please refer to the [LEGOs GitHub repository](https://github.com/NickF0211/LEGOs) for more information and setup instructions.
-
-## Contribution
-Contributions are welcome! Please submit a Pull Request or report issues.
+Where:
+- `your_rules.sleec` is your SLEEC rules file
+- `15` is the time window in seconds
+- `rule1_id rule2_id` are the IDs of the rules you want to trigger
 
 ## License
-This project is licensed under the MIT License.
 
-## Contact
-For any questions, please contact junwei.quan@mail.utoronto.ca
+This project is licensed under the MIT License - see the LICENSE file for details. 
