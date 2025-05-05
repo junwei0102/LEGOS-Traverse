@@ -1,0 +1,56 @@
+# 忽略所有文件
+*
+
+# 但允许 .py 文件
+!*.py
+
+# 但是也要允许 .gitignore 本身，否则会被忽略
+!.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Streamlit
+.streamlit/
+
+# Project specific
+data/output/traces/*
+data/output/lts/*
+*.aut
+*.bcg
+*.o
+*.log
+
+# Keep directory structure
+!data/output/traces/.gitkeep
+!data/output/lts/.gitkeep

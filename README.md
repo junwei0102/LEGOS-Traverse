@@ -1,37 +1,74 @@
-# LEGOS-TRAVERSE
+# SLEEC Rules Analysis Pipeline
 
-## Introduction
-This project aims to analyze and process rules using the SLEEC rules analysis and LTS generation pipeline. It includes multiple modules and functionalities to support rule parsing, analysis, defining mutual exclusivity, and generating LTS format transitions.
+A pipeline for analyzing SLEEC rules and generating traces that trigger rules.
 
 ## Directory Structure
-- `augment.py`: Handles image augmentation and scene label processing.
-- `rules.py`: Provides functions for extracting and analyzing rules.
-- `translator.py`: Extracts measures and event mappings from rules.
-- `pipeline.py`: Implements the SLEEC rules analysis and LTS generation pipeline.
-- `legos_integration.py`: Integrates the LEGOs library to parse SLEEC files and generate traces.
-- `LEGOs/`: Contains related files and modules for the LEGOs library.
+
+The project has been organized into the following structure:
+
+```
+.
+├── data/
+│   ├── rules/           # SLEEC rule files
+│   ├── examples/        # Example SLEEC files
+│   └── output/
+│       ├── traces/      # Generated traces
+│       └── lts/         # LTS (Labeled Transition System) files
+├── LEGOs/               # LEGOS library
+├── src/                 # Source code
+│   ├── pipeline.py      # Main Streamlit application
+│   ├── translator.py    # Trace to LTS translator
+│   ├── rules.py         # Rules extraction and analysis
+│   ├── legos_integration.py # Integration with LEGOs
+│   ├── augment.py       # Augmentation tool
+│   └── test_translator.py # Tests
+└── run_app.py           # Script to run the application
+```
 
 ## Installation
+
 1. Clone the repository:
-   ```bash
-   git clone https://github.com/junwei0102/LEGOS-Traverse.git
-   cd LEGOS-Traverse
+   ```
+   git clone https://github.com/yourusername/sleec-rules-pipeline.git
+   cd sleec-rules-pipeline
    ```
 
-2. Install dependencies:
-   ```bash
+2. Install the required dependencies:
+   ```
    pip install -r requirements.txt
    ```
 
 ## Usage
-1. Start the Streamlit application:
-   ```bash
-   streamlit run pipeline.py
-   ```
 
-2. Open the Streamlit app in your browser, choose the input method, and perform rule analysis.
+Run the application with:
+```
+./run_app.py
+```
+or
+```
+python run_app.py
+```
 
-3. The generated LTS file will be saved as `input_lts.aut`.
+This will start the Streamlit web interface where you can:
+1. Upload or enter SLEEC rules
+2. Analyze rules by different criteria (shared responses, mutually exclusive responses, shared measures)
+3. Generate traces that trigger selected rules
+4. Convert traces to LTS format
+
+## Running the Trace Generator
+
+The tool can generate traces that trigger specific rules with the command:
+
+```
+python -m src.legos_integration <sleec_file> <time_window> [rule_ids...]
+```
+
+Example:
+```
+python -m src.legos_integration data/rules/example.sleec 15 r2_1 r1_prime
+```
+
+This will generate a trace that triggers rules with IDs r2_1 and r1_prime within 15 seconds.
 
 ## Features
 - **Rule Analysis**: Supports analysis of shared responses, mutually exclusive responses, and shared measures.
