@@ -1,0 +1,6 @@
+at time 0: UserDriving()
+at time 0: TrackMetrics()
+at time 0: Measure(hearRateVariability=low, eyeMovements=low1, fullAttentionNeeded=False, properlyPlaced=False, informationImportant=False, health=False, hasLicense=False, substanceUse=False, commonLanguage=False, userUnderstands=False, sameCity=False, rulesFollowed=False, objectNearby=False, userNotice=False, blindSpot=True, obtainConsent=False, needsAccomodation=False, userImpaired=False, warningSignalOff=False, userGivesControl=False, decisionPoint=False)
+at time 1: InformUser()
+at time 1: EnsureAlertness()
+at time 1: TrackVisionField()

@@ -1,0 +1,100 @@
+def_start
+    event PreparingDeployment
+    event AgentDeployed
+    event MeetingUser    
+    event InformUser
+    event InformCaregiver
+	event CallEmergencyServices    	
+    event RemindLater
+	event AgentHasAppropriateAppearance
+    event AskForDetailLevelOfInstructions
+    event UseFirstPersonPluralLanguage
+    event CalibrateSpeech    
+    event RemindUserOfLimitations
+    event AskForEmergencyContact
+    event HumanOnFloor
+    event SmokeDetectorAlarm
+    event OpenWindows
+    event FireSafetyMeasures
+    event AskUserIfOK
+    event InterfereSafely
+    event UserHasLimitation
+    event CheckTemperature
+    event FoodPreparation
+    event TrackTime    
+    event UserUnpredictable
+    event GiveUserDangerousObjects
+    event MonitorMealTime
+    event BeforeCookingBegins
+    event UserWantsToCook
+    event AllowUserToCook
+    event GiveSuggestion
+    event GivingCookingInstructions
+    event ConsiderUserPractices
+    event UserChangeItemLocation
+    event UserChangeMind
+    event RecalculateApproach
+    event ProvideDataSummaries
+    event CollectandRecordInformation
+    event UpdateInformation
+    event ShowDataHistory
+    event UpdateMap
+    
+        measure userOccupied: boolean
+        measure timeBetweenMeals: numeric
+        measure personAuthorized: boolean
+        measure dataNeedsChecking: boolean
+        measure userAsksForAppropriateTasks: boolean
+        measure userNeedsSpecialAccomodations: boolean
+        measure userDisablesAlarm: boolean
+        measure alarmRestarts: boolean
+        measure needLevel: scale(nlow, nmedium, nhigh)
+        measure humanAssents: boolean
+        measure safePathFound: boolean
+        measure hazardDetected: boolean
+        measure kitchenSafe: boolean
+        measure riskLevel: scale(low, medium, high)
+        measure alarmOn: boolean
+    
+    constant maxTimeBetweenMeals = 28800 
+def_end
+
+rule_start
+    R1 when MonitorMealTime and (not {userOccupied}) then InformUser within [5 minutes, 10 minutes]
+    R1_1 when MonitorMealTime and {userOccupied} then RemindLater within [15 minutes, 30 minutes]
+    R2 when AgentDeployed then TrackTime within [1 minutes, 2 minutes]
+    R2_1 when TrackTime and ({timeBetweenMeals} > maxTimeBetweenMeals) then InformCaregiver within [2 minutes, 5 minutes]
+    R2_2 when TrackTime and ({timeBetweenMeals} > maxTimeBetweenMeals) then GiveSuggestion within [1 minutes, 3 minutes]
+    R3 when HumanOnFloor and {humanAssents} then CallEmergencyServices within [1 minutes, 3 minutes]
+    R3_1 when HumanOnFloor and (not {humanAssents}) then not CallEmergencyServices
+    R4 when InterfereSafely and ((not {safePathFound}) and (not {userOccupied})) then InformUser within [1 minutes, 2 minutes]
+    R5 when UserWantsToCook then AllowUserToCook within [1 minutes, 2 minutes]
+    R5_1 when AllowUserToCook and ({hazardDetected} or ({riskLevel} = high)) then InterfereSafely within [2 minutes, 5 minutes]
+    R6 when UserHasLimitation then InformUser within [2 minutes, 5 minutes]
+    R7 when UserWantsToCook then CheckTemperature within [2 minutes, 4 minutes]
+    R7_1 when CheckTemperature and {hazardDetected} then InformUser within [2 minutes, 5 minutes]
+    R8 when FoodPreparation then TrackTime within [1 minutes, 2 minutes]
+    R8_1 when TrackTime then InformUser within [5 minutes, 10 minutes]
+    R9 when MeetingUser then CollectandRecordInformation within [2 minutes, 5 minutes]
+    R9_1 when AgentDeployed then UpdateInformation within [5 minutes, 10 minutes]
+    R10 when GiveSuggestion then ConsiderUserPractices within [1 minutes, 2 minutes]
+    R11 when MeetingUser then AskForEmergencyContact within [3 minutes, 5 minutes]
+    R11_1 when AskForEmergencyContact then InformUser within [1 minutes, 2 minutes]
+    R12 when AgentDeployed and (not {personAuthorized}) then not ShowDataHistory
+    R12_1 when ShowDataHistory and {dataNeedsChecking} then ProvideDataSummaries within [2 minutes, 5 minutes]
+    R13 when UserUnpredictable then not GiveUserDangerousObjects
+    R14 when AgentDeployed and (not {userAsksForAppropriateTasks} and ({needLevel} < nmedium)) then RemindUserOfLimitations within [2 minutes, 5 minutes]
+    R15 when PreparingDeployment and (not {userNeedsSpecialAccomodations}) then AgentHasAppropriateAppearance within [1 minutes, 3 minutes]
+    R16 when PreparingDeployment then CalibrateSpeech within [1 minutes, 3 minutes]
+    R17 when GivingCookingInstructions then UseFirstPersonPluralLanguage within [2 minutes, 5 minutes]
+    R17_1 when GivingCookingInstructions then InformUser within [1 minutes, 2 minutes] //offer to repeat
+    R18 when BeforeCookingBegins then AskForDetailLevelOfInstructions within [1 minutes, 3 minutes]
+    R19 when UserChangeMind and (not {riskLevel} = high) then RecalculateApproach within [1 minutes, 3 minutes]
+    R20 when UserChangeItemLocation and (not {riskLevel} = high) then UpdateMap within [1 minutes, 3 minutes]
+    R20_1 when UserChangeItemLocation and ({riskLevel} = high) then InterfereSafely within [2 minutes, 5 minutes]
+    R21 when SmokeDetectorAlarm and ((not {userDisablesAlarm}) or {alarmRestarts}) then CallEmergencyServices within [2 minutes, 5 minutes]
+    R21_1 when SmokeDetectorAlarm and ((not {userDisablesAlarm}) and (not {alarmRestarts})) then FireSafetyMeasures within [1 minutes, 2 minutes]
+    R21_2 when FireSafetyMeasures then OpenWindows within [2 minutes, 5 minutes]
+    R21_3 when FireSafetyMeasures then AskUserIfOK within [2 minutes, 5 minutes]
+    R21_4 when FireSafetyMeasures then InformCaregiver within [1 minutes, 3 minutes]
+rule_end

@@ -1,0 +1,8 @@
+des (0, 7, 8)
+(0, "InstructionFail(timeElapsed=21, time=1)", 1)
+(1, "CallSupport(time=1)", 2)
+(2, i, 3)
+(3, "MeetingUser(trainingDataRepresentative=False, time=1)", 4)
+(4, i, 5)
+(5, "ExaminingPatient(behaviorAggressive=True, time=1)", 6)
+(6, i, 7)

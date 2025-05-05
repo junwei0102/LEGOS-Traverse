@@ -1,0 +1,6 @@
+at time 0: CallSupport()
+at time 1: InstructionFail()
+at time 1: Measure(timeElapsed=21, instructionRepeat=0, trainingDataRepresentative=False, behaviorAggressive=True)
+at time 1: CallSupport()
+at time 1: MeetingUser()
+at time 1: ExaminingPatient() 

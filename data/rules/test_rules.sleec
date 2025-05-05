@@ -1,0 +1,27 @@
+def_start
+// Events
+event InstructionFail
+event CallSupport
+event MeetingUser
+event ExaminingPatient
+
+// measures
+measure timeElapsed:numeric
+measure instructionRepeat:numeric
+measure trainingDataRepresentative:boolean
+measure behaviorAggressive:boolean
+
+// constants
+constant maxRepeat = 3
+constant maxTime = 20
+
+def_end
+
+rule_start
+Rule6 when InstructionFail then RepeatInstruction
+          unless (({instructionRepeat} >= 3) or ({timeElapsed} > 20)) then CallSupport
+
+Rule25 when MeetingUser and (not {trainingDataRepresentative}) then CallSupport 
+
+Rule14_2 when ExaminingPatient and {behaviorAggressive} then CallSupport
+rule_end 

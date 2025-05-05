@@ -1,0 +1,10 @@
+rule_start
+
+// Rules sharing response: ProvideInfo
+Rule5 when UserRequestInfo then ProvideInfo
+          unless ((not {informationAvailable}) or {informationDisclosureNotPermitted}) 
+                      then InformUserandandReferToHumanCarer
+Rule5_1 when UserRequestInfo then ProvideInfo
+   unless ((not {informationAvailable}) or {informationDisclosureNotPermitted})  then not ProvideInfo
+
+rule_end

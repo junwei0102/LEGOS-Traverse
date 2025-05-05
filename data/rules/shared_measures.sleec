@@ -1,0 +1,10 @@
+rule_start
+
+// Rules sharing specified measures:
+// userSensoryNeedsMet
+Rule7 when PreparingExamination then ObtainConsent
+          unless ((not {userSensoryNeedsMet}) or ({UserAge} < legalAge)) then AskRepresentativeForConsent
+Rule9 when CheckUnderstanding and (({userPayingAttention} and {userDataInformed}) 
+          and {userSensoryNeedsMet}) then UserUnderstands
+
+rule_end

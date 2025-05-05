@@ -1,0 +1,17 @@
+rule_start
+
+// Mutually exclusive group 1
+// Response: UsePreferredName
+Rule1 when AddressUserName then UsePreferredName
+   	 unless {userNameUnknown} then AddressSirOrMadam
+   	 unless {userDirectsOtherwise}
+Rule2 when ProvideInfo then UsePreferredName
+   	 unless {directlyToUser}
+   	 unless {userConsentAvalaible}
+   	 unless {medicalEmergency}
+// Response: UseChoicenLanguage
+Rule4 when Speaking then UseChoicenLanguage
+   	 unless (not {languagePreferenceAvailable}) then UseDefaultasEnglish
+   	 unless {userDirectsOtherwise}
+
+rule_end
