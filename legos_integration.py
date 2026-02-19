@@ -1,138 +1,114 @@
 import os
-import json
-from typing import Dict, List, Tuple
 import sys
+import argparse
+from pathlib import Path
+from typing import List, Optional
 
-# add project root directory to Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(current_dir)  # add current directory (project root directory)
+_PARSE_AND_MAX_TRACE = None
 
-from LEGOs.Sleec.sleecParser import parse_sleec, check_input_red, check_input_conflict, check_input_concerns, parse_and_max_trace
 
-def run_sleec_parser(sleec_file: str, time_window: int = 15) -> Tuple[List[str], List[Dict]]:
+def _load_legos_parser():
     """
-    run LEGOs' sleecParser to get the trace that triggers the most rules
+    Import LEGOs' sleecParser lazily.
+
+    This keeps `import legos_integration` working in environments that haven't
+    installed LEGOs' heavier dependencies (e.g., pysmt), while still providing
+    a clear error when the CLI is used without them.
+    """
+    global _PARSE_AND_MAX_TRACE
+    if _PARSE_AND_MAX_TRACE is not None:
+        return _PARSE_AND_MAX_TRACE
+
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.append(current_dir)
+
+    analyzer_path = os.path.join(current_dir, "LEGOs", "Analyzer")
+    sleec_path = os.path.join(current_dir, "LEGOs", "Sleec")
+    for path in (analyzer_path, sleec_path):
+        if path not in sys.path:
+            sys.path.append(path)
+
+    _original_cwd = os.getcwd()
+    try:
+        os.chdir(sleec_path)
+        try:
+            from LEGOs.Sleec.sleecParser import parse_and_max_trace  # type: ignore
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "LEGOs dependencies are not installed (missing module). "
+                "Use the provided conda/venv environment for LEGOs to run this script."
+            ) from exc
+    finally:
+        os.chdir(_original_cwd)
+
+    _PARSE_AND_MAX_TRACE = parse_and_max_trace
+    return _PARSE_AND_MAX_TRACE
+
+def run_sleec_parser(
+    sleec_file: str,
+    time_window: int = 600,
+    rule_ids: Optional[List[str]] = None,
+) -> str:
+    """
+    Run LEGOs' SLEEC parser to generate a raw trace string.
     
     Args:
         sleec_file: path of SLEEC file
-        time_window: time window size (default 15)
+        time_window: time window size (seconds)
+        rule_ids: optional subset of rule IDs to target
         
     Returns:
-        Tuple[List[str], List[Dict]]: return (triggered rules list, final trace)
+        Raw trace string (lines like `at time X: Event()` and `Measure(...)`).
     """
     try:
-        # directly call parse_and_max_trace function
-        output = parse_and_max_trace(sleec_file, tracetime=time_window)
-        
-        # save full output to file
-        with open('parser_output.txt', 'w') as f:
-            f.write(output)
-            
-        # read file and parse trace
-        trace = []
-        with open('parser_output.txt', 'r') as f:
-            for line in f:
-                if line.startswith("at time"):
-                    # parse time and event
-                    time_str, event = line.split(": ", 1)
-                    time = int(time_str.replace("at time ", ""))
-                    
-                    # parse event and parameters
-                    if "(" in event:
-                        event_name = event.split("(")[0]
-                        params_str = event[event.find("(")+1:event.find(")")]
-                        params = {}
-                        if params_str:
-                            for param in params_str.split(", "):
-                                if "=" in param:
-                                    key, value = param.split("=")
-                                    # convert boolean and number
-                                    if value.lower() == "true":
-                                        value = True
-                                    elif value.lower() == "false":
-                                        value = False
-                                    else:
-                                        try:
-                                            value = int(value)
-                                        except ValueError:
-                                            value = value
-                                    params[key] = value
-                    else:
-                        event_name = event.strip()
-                        params = {}
-                    
-                    trace.append({
-                        "time": time,
-                        "event": event_name,
-                        "params": params
-                    })
-        
-        return ["Trace generated"], trace  # for simplicity, we do not parse specific rules
+        target_rules = rule_ids if rule_ids is not None else []
+        parse_and_max_trace = _load_legos_parser()
+        output = parse_and_max_trace(sleec_file, target_rules, tracetime=time_window)
+        if not isinstance(output, str):
+            raise TypeError(f"Expected trace string from LEGOs, got {type(output).__name__}")
+        return output
         
     except Exception as e:
         print(f"Error running LEGOS parser: {str(e)}")
-        return [], []
+        return ""
 
-def convert_trace_to_lts(trace: List[Dict]) -> str:
-    """
-    convert trace generated by LEGOs to LTS format
-    
-    Args:
-        trace: trace generated by LEGOs
-        
-    Returns:
-        str: LTS format string
-    """
-    # calculate number of transitions
-    transitions = len(trace)
-    
-    # build LTS string
-    lts = [f"des (0,{transitions},{transitions})"]
-    
-    # add each transition
-    for i, event in enumerate(trace):
-        # build parameter string
-        params = []
-        for key, value in event["params"].items():
-            params.append(f"{key}={value}")
-        params_str = ", ".join(params)
-        
-        # build full transition label
-        if params:
-            label = f'{event["event"]}({params_str}, time={event["time"]})'
-        else:
-            label = f'{event["event"]}(time={event["time"]})'
-            
-        # add transition
-        lts.append(f'({i}, "{label}", {i+1})')
-    
-    return "\n".join(lts)
 
-def generate_lts_from_sleec(sleec_file: str, time_window: int = 15, rule_ids: List[str] = None) -> bool:
-    """
-    generate trace from SLEEC file
-    
-    Args:
-        sleec_file: path of SLEEC file
-        time_window: time window size
-        rule_ids: list of rule IDs to be triggered (optional)
-        
-    Returns:
-        bool: whether the trace is successfully generated
-    """
-    try:
-        # run LEGOs parser to generate trace
-        if rule_ids:
-            output = parse_and_max_trace(sleec_file, target_rule_ids=rule_ids, tracetime=time_window)
-        else:
-            output = parse_and_max_trace(sleec_file, tracetime=time_window)
-        
-        # save full output to file
-        with open('parser_output.txt', 'w') as f:
-            f.write(output)
-            
-        return True
-            
-    except Exception as e:
-        print(f"Error running LEGOS parser: {str(e)}")
-        return False 
+def main():
+    parser = argparse.ArgumentParser(description="Generate raw traces from SLEEC files using LEGOs.")
+    parser.add_argument("--sleec", required=True, help="Path to the SLEEC file (e.g., examples/DAISY.sleec).")
+    parser.add_argument("--time-window", type=int, default=15, help="Trace time window (default: 15).")
+    parser.add_argument(
+        "--rules",
+        nargs="+",
+        help="Optional list of rule IDs to target; defaults to letting LEGOs decide.",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help=(
+            "Path to save the generated trace (default: traces/<domain>_<rules>_<time>.txt). "
+            "Note: LEGOs may also save its own copy under traces/."
+        ),
+    )
+    args = parser.parse_args()
+
+    print(f"[LEGOs] Generating trace for {args.sleec} (time window={args.time_window})...")
+    trace_text = run_sleec_parser(args.sleec, args.time_window, args.rules)
+    if not trace_text.strip():
+        raise SystemExit("Failed to generate trace via LEGOs parser.")
+
+    output_path = args.output
+    if output_path is None:
+        domain = Path(args.sleec).stem or Path(args.sleec).name
+        rule_part = "-".join(args.rules) if args.rules else "ALL"
+        output_path = Path("traces") / f"{domain}_{rule_part}_{args.time_window}.txt"
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(trace_text, encoding="utf-8")
+
+    print(f"[LEGOs] Trace saved to {output_path}")
+
+
+if __name__ == "__main__":
+    main()
