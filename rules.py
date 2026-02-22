@@ -1,1088 +1,599 @@
-import streamlit as st
-import re
-from itertools import combinations
-
-def extract_responses(sleec_content):
-    """extract all rules and their responses, including responses in unless clauses"""
-    rules_dict = {}
-    rule_responses = {}
-    rules_full_text = {}  # store full text of rules
-    
-    # first split content by line and filter out comment lines
-    valid_lines = []
-    for line in sleec_content.split('\n'):
-        line = line.strip()
-        if line and not line.startswith('//'):
-            valid_lines.append(line)
-    
-    # recombine valid lines
-    valid_content = '\n'.join(valid_lines)
-    
-    # modify pattern to match any rule name (the word before when)
-    pattern = r'([^\s]+)\s+when\s+.*?then\s+(.*?)(?=(?:[^\s]+\s+when|rule_end|$))'
-    rules = re.finditer(pattern, valid_content, re.DOTALL)
-    
-    for rule in rules:
-        rule_text = rule.group(0)
-        rule_name = rule.group(1)
-        response_text = rule.group(2).strip()
-        
-        # store full rule text
-        rules_full_text[rule_name] = rule_text.strip()
-        rule_responses[rule_name] = []
-        
-        # extract main response (including not prefix)
-        main_response_match = re.search(r'^\s*((?:not\s+)?\w+)', response_text)
-        if main_response_match:
-            main_response = main_response_match.group(1).strip()
-            if main_response.lower() not in ['and', 'or', 'unless']:
-                if main_response not in rules_dict:
-                    rules_dict[main_response] = []
-                rules_dict[main_response].append(rule_name)
-                rule_responses[rule_name].append(main_response)
-        
-        # extract responses in unless clauses (including not prefix)
-        unless_responses = re.finditer(r'unless.*?then\s+((?:not\s+)?\w+)', response_text)
-        for unless_match in unless_responses:
-            unless_response = unless_match.group(1).strip()
-            if unless_response.lower() not in ['and', 'or', 'unless']:
-                if unless_response not in rules_dict:
-                    rules_dict[unless_response] = []
-                rules_dict[unless_response].append(f"{rule_name} (unless)")
-                rule_responses[rule_name].append(unless_response)
-    
-    return rules_dict, rule_responses, rules_full_text
-
-def extract_rule_ids(sleec_content):
-    """
-    Extract all rule IDs from a SLEEC content file
-    
-    Args:
-        sleec_content: content of SLEEC file
-        
-    Returns:
-        list of rule IDs
-    """
-    rule_ids = []
-    
-    # first split content by line and filter out comment lines
-    valid_lines = []
-    for line in sleec_content.split('\n'):
-        line = line.strip()
-        if line and not line.startswith('//'):
-            valid_lines.append(line)
-    
-    # recombine valid lines
-    valid_content = '\n'.join(valid_lines)
-    
-    # pattern to match any rule name (the word before when)
-    pattern = r'([^\s]+)\s+when'
-    matches = re.finditer(pattern, valid_content)
-    
-    for match in matches:
-        rule_id = match.group(1)
-        if rule_id and rule_id not in rule_ids:
-            rule_ids.append(rule_id)
-    
-    return rule_ids
-
-def find_mutually_exclusive_rules(rules_dict, rule_responses, mutual_exclusive_pairs):
-    """find groups of rules with mutually exclusive responses, exclude responses from the same rule, consider complete constraint information of measures"""
-    exclusive_groups = []
-    processed_responses = set()
-    
-    # process explicitly declared mutually exclusive pairs
-    for response1, response2 in mutual_exclusive_pairs:
-        response1, response2 = response1.strip(), response2.strip()
-        if response1 in rules_dict and response2 in rules_dict:
-            # filter out responses from the same rule
-            rules1 = set(rules_dict[response1])
-            rules2 = set(rules_dict[response2])
-            
-            # remove rules containing both responses
-            filtered_rules1 = {rule for rule in rules1 
-                             if rule.split()[0] not in 
-                             [r.split()[0] for r in rules2]}
-            filtered_rules2 = {rule for rule in rules2 
-                             if rule.split()[0] not in 
-                             [r.split()[0] for r in filtered_rules1]}
-            
-            if filtered_rules1 and filtered_rules2:
-                group = {
-                    response1: list(filtered_rules1),
-                    response2: list(filtered_rules2)
-                }
-                exclusive_groups.append(group)
-                processed_responses.add(response1)
-                processed_responses.add(response2)
-    
-    return exclusive_groups
-
-def generate_sleec_file(groups, rules_full_text, is_shared=True, original_content=""):
-    """generate SLEEC file based on rule groups, keep complete constraint information of measures, and add mutually exclusive relation declaration"""
-    # extract def part from original file
-    def_content = ""
-    if original_content:
-        def_match = re.search(r'def_start(.*?)def_end', original_content, re.DOTALL)
-        if def_match:
-            def_content = def_match.group(1)
-    
-    # if no def part is extracted, use default def content
-    if not def_content:
-        def_content = """
-// define measures
-measure userPayingAttention: boolean
-measure userDataInformed: boolean
-measure userSensoryNeedsMet: boolean
-measure urgentNeed: boolean
-measure severityOfState: numeric
-measure stablePsychologicalState: boolean
-measure timeElapsed: numeric
-measure informationAvailable: boolean
-measure informationDisclosureNotPermitted: boolean
-measure languagePreferenceAvailable: boolean
-measure directlyToUser: boolean
-measure userConsentAvalaible: boolean
-measure guardianConsentAvalaible: boolean
-measure medicalEmergency: boolean
-measure culturalIndicatorA: boolean
-measure genderTypeB: boolean
-measure userNameUnknown: boolean
-measure userDirectsOtherwise: boolean
-measure instructionRepeat: numeric
-measure bodyPartInvolvedInExam: boolean
-measure behaviorAggressive: boolean
-measure dataNoiseConsidered: boolean
-measure dataRelevantToContext: boolean
-measure dataUnnecessary: boolean
-measure trainingDataRepresentative: boolean
-measure patientComfortable: boolean
-measure patientAgeConsidered: boolean
-measure patientXReligion: boolean
-measure stablePhysicalState: boolean
-measure UserUnableToConsent: boolean
-measure UserAge: numeric
+#!/usr/bin/env python3
 """
-    
-    # build SLEEC file content
-    sleec_content = "def_start\n" + def_content.strip() + "\ndef_end\n\nrule_start\n"
-    
-    # list for collecting mutually exclusive pairs
-    mutual_exclusive_pairs = []
-    
-    # process different types of input
-    if isinstance(groups, list):
-        # if groups is a list, check its element type
-        if groups and isinstance(groups[0], dict):
-            # process list of dictionaries (mutually exclusive rule groups)
-            for group_idx, group in enumerate(groups):
-                sleec_content += f"// Group {group_idx + 1}\n"
-                
-                # collect mutually exclusive pairs
-                responses = list(group.keys())
-                if len(responses) == 2:  # ensure two responses
-                    mutual_exclusive_pairs.append((responses[0], responses[1]))
-                
-                # process each response and its rules
-                for response, rules in group.items():
-                    for rule in rules:
-                        # find matching rule in full rule text
-                        rule_name = rule.split()[0]
-                        if isinstance(rules_full_text, dict) and rule_name in rules_full_text:
-                            # if rules_full_text is a dictionary, directly get rule content
-                            sleec_content += rules_full_text[rule_name] + "\n\n"
-                        else:
-                            # if no matching rule is found, use simplified version
-                            sleec_content += f"{rule}\n\n"
-                
-                sleec_content += "\n"
-        else:
-            # process list of strings (rule list)
-            for rule in groups:
-                sleec_content += rule + "\n\n"
-    elif isinstance(groups, dict):
-        # process dictionary (rules with shared responses)
-        for response, rules in groups.items():
-            sleec_content += f"// Response: {response}\n"
-            for rule in rules:
-                # find matching rule in full rule text
-                rule_name = rule.split()[0]
-                if isinstance(rules_full_text, dict) and rule_name in rules_full_text:
-                    # if rules_full_text is a dictionary, directly get rule content
-                    sleec_content += rules_full_text[rule_name] + "\n\n"
-                else:
-                    # if no matching rule is found, use simplified version
-                    sleec_content += f"{rule}\n\n"
-            
-            sleec_content += "\n"
-    else:
-        # process string (single rule or content)
-        sleec_content += str(groups) + "\n\n"
-    
-    sleec_content += "rule_end\n\n"
-    
-    # add mutually exclusive relation declaration
-    if mutual_exclusive_pairs:
-        sleec_content += "relation_start\n"
-        for response1, response2 in mutual_exclusive_pairs:
-            sleec_content += f"mutualExclusive {response1} {response2}\n"
-        sleec_content += "relation_end\n"
-    
-    # determine file name
-    file_name = "shared_rules.sleec" if is_shared else "exclusive_rules.sleec"
-    
-    # write to file
-    with open(file_name, 'w') as f:
-        f.write(sleec_content)
-    
-    return sleec_content  # return content instead of file name, so it can be used directly
+Minimal CLI utilities for extracting rule subsets from a SLEEC file.
 
-def extract_measures_from_def(sleec_content):
-    """extract all measures from def part"""
-    measures = []
-    
-    # extract def part content
-    def_match = re.search(r'def_start(.*?)def_end', sleec_content, re.DOTALL)
-    if def_match:
-        def_content = def_match.group(1)
-        # match measure definition line, ignore comment lines
-        for line in def_content.split('\n'):
-            line = line.strip()
-            if line and not line.startswith('//'):
-                # match measure definition - including boolean, numeric and scale types
-                match = re.match(r'measure\s+(\w+)\s*:\s*(boolean|numeric|scale\([^)]+\))', line)
-                if match:
-                    measure_name = match.group(1)
-                    measure_type = match.group(2)
-                    measures.append((measure_name, measure_type))
-    
-    return measures
+Supported modes:
+  - shared-responses: rules that share the same response event (then/unless-then)
+  - shared-measures: rules that reference specific measures (by {measure} name)
+  - mutual-exclusive: rules whose responses are declared mutuallyExclusive in the file
+"""
 
-def extract_measures(sleec_content):
-    """extract all measures from all rules, including measures in unless clauses and combined measures, keep complete constraint information"""
-    measures_dict = {}  # store measures for each rule
-    
-    # first extract all scale type measures and their possible values
-    scale_measures = {}
-    def_match = re.search(r'def_start(.*?)def_end', sleec_content, re.DOTALL)
-    if def_match:
-        def_content = def_match.group(1)
-        scale_pattern = r'measure\s+(\w+)\s*:\s*scale\(([^)]+)\)'
-        scale_matches = re.finditer(scale_pattern, def_content)
-        for scale_match in scale_matches:
-            measure_name = scale_match.group(1)
-            scale_values = [val.strip() for val in scale_match.group(2).split(',')]
-            scale_measures[measure_name] = scale_values
-    
-    # modify pattern to match any rule starting with when
-    pattern = r'([^\s]+)\s+when\s+(.*?)(?=(?:[^\s]+\s+when|rule_end|$))'
-    matches = re.finditer(pattern, sleec_content, re.DOTALL)
-    
-    for match in matches:
-        rule_name = match.group(1)  # use identifier before when as rule name
-        rule_content = match.group(2).strip()
-        
-        measures = set()
-        
-        # process scale comparison with not - for example (not {riskLevel} = high)
-        # first process format with parentheses: (not {measure} = value)
-        not_scale_comp_pattern1 = r'\(not\s*\{([^}]+)\}\s*([<>]=?|=|≤|≥)\s*(\w+)\)'
-        not_scale_comp_matches1 = re.finditer(not_scale_comp_pattern1, rule_content)
-        for not_comp_match in not_scale_comp_matches1:
-            measure = not_comp_match.group(1).strip()
-            operator = not_comp_match.group(2)
-            value = not_comp_match.group(3)
-            
-            # normalize operator
-            if operator == '<=':
-                operator = '≤'
-            elif operator == '>=':
-                operator = '≥'
-            
-            # add comparison information with not
-            not_measure_value = f"not_{measure}{operator}{value}"
-            measures.add(not_measure_value)
-            print(f"Rule {rule_name}: Added not scale comparison: {not_measure_value}")
-            
-            # if it is a scale type measure, add basic information
-            if measure in scale_measures:
-                measures.add(f"scale_{measure}")
-        
-        # then process format without parentheses: not {measure} = value
-        not_scale_comp_pattern2 = r'not\s*\{([^}]+)\}\s*([<>]=?|=|≤|≥)\s*(\w+)'
-        not_scale_comp_matches2 = re.finditer(not_scale_comp_pattern2, rule_content)
-        for not_comp_match in not_scale_comp_matches2:
-            measure = not_comp_match.group(1).strip()
-            operator = not_comp_match.group(2)
-            value = not_comp_match.group(3)
-            
-            # normalize operator
-            if operator == '<=':
-                operator = '≤'
-            elif operator == '>=':
-                operator = '≥'
-            
-            # add comparison information with not
-            not_measure_value = f"not_{measure}{operator}{value}"
-            measures.add(not_measure_value)
-            print(f"Rule {rule_name}: Added not scale comparison: {not_measure_value}")
-            
-            # if it is a scale type measure, add basic information
-            if measure in scale_measures:
-                measures.add(f"scale_{measure}")
-        
-        # process not measures (keep complete not semantic)
-        not_measures_pattern = r'not\s*\{([^}]+)\}'
-        not_measures_matches = re.finditer(not_measures_pattern, rule_content)
-        for not_match in not_measures_matches:
-            measure = not_match.group(1).strip()
-            
-            # check if this measure has been processed as comparison
-            full_match = f"not {{{measure}}}"
-            is_comp = re.search(re.escape(full_match) + r'\s*([<>]=?|=|≤|≥)', rule_content)
-            
-            # if it is not a comparison measure, add as a normal not measure
-            if not is_comp:
-                not_measure = f"not_{measure}"
-                measures.add(not_measure)
-                print(f"Rule {rule_name}: Added not measure: {not_measure}")
-                
-                # if it is a scale type measure, add basic information
-                if measure in scale_measures:
-                    measures.add(f"scale_{measure}")
-        
-        # process measures with comparison operators (keep complete comparison information)
-        # match various comparison operators, including <, >, =, <=, >=, ≤, ≥
-        comp_pattern = r'\{([^}]+)\}\s*([<>]=?|=|≤|≥)\s*(\w+)'
-        comp_matches = re.finditer(comp_pattern, rule_content)
-        for comp_match in comp_matches:
-            measure = comp_match.group(1).strip()
-            operator = comp_match.group(2)
-            value = comp_match.group(3)
-            
-            # normalize operator
-            if operator == '<=':
-                operator = '≤'
-            elif operator == '>=':
-                operator = '≥'
-                
-            # use format: measure_operator_value, for example: UserAge_<_legalAge
-            # note: do not use underscore to separate, to match user input format
-            measure_value = f"{measure}{operator}{value}"
-            measures.add(measure_value)
-            print(f"Rule {rule_name}: Added scale comparison: {measure_value}")
-            
-            # if it is a scale type measure, add basic information
-            if measure in scale_measures:
-                measures.add(f"scale_{measure}")
-        
-        # process normal boolean measures - use two-step matching instead of look-behind
-        # first get all content in curly braces
-        all_measures = re.finditer(r'\{([^}]+)\}', rule_content)
-        for measure_match in all_measures:
-            measure = measure_match.group(1).strip()
-            full_match = f"{{{measure}}}"
-            
-            # check if this measure is a not measure (前面有not)
-            is_not_measure = re.search(r'not\s*' + re.escape(full_match), rule_content)
-            
-            # check if this measure is a comparison measure (后面有比较运算符)
-            is_comp_measure = re.search(re.escape(full_match) + r'\s*([<>]=?|=|≤|≥)\s*\w+', rule_content)
-            
-            # if it is neither a not measure nor a comparison measure, it is a normal boolean measure
-            if not is_not_measure and not is_comp_measure:
-                bool_measure = f"bool_{measure}"
-                measures.add(bool_measure)
-                print(f"Rule {rule_name}: Added boolean measure: {bool_measure}")
-                
-            # if it is a scale type measure, add basic information
-            if measure in scale_measures:
-                measures.add(f"scale_{measure}")
-        
-        # process combined measures (process content in parentheses)
-        combined_pattern = r'\((.*?)\)'
-        combined_matches = re.finditer(combined_pattern, rule_content)
-        for combined_match in combined_matches:
-            combined_content = combined_match.group(1)
-            
-            # process scale comparison with not in combined content
-            not_scale_comp_in_combined1 = re.finditer(not_scale_comp_pattern1, combined_content)
-            for not_comp_match in not_scale_comp_in_combined1:
-                measure = not_comp_match.group(1).strip()
-                operator = not_comp_match.group(2)
-                value = not_comp_match.group(3)
-                
-                # normalize operator
-                if operator == '<=':
-                    operator = '≤'
-                elif operator == '>=':
-                    operator = '≥'
-                
-                # add comparison information with not
-                not_measure_value = f"not_{measure}{operator}{value}"
-                measures.add(not_measure_value)
-                print(f"Rule {rule_name}: Added not scale comparison from combined: {not_measure_value}")
-                
-                # if it is a scale type measure, add basic information
-                if measure in scale_measures:
-                    measures.add(f"scale_{measure}")
-            
-            not_scale_comp_in_combined2 = re.finditer(not_scale_comp_pattern2, combined_content)
-            for not_comp_match in not_scale_comp_in_combined2:
-                measure = not_comp_match.group(1).strip()
-                operator = not_comp_match.group(2)
-                value = not_comp_match.group(3)
-                
-                # normalize operator
-                if operator == '<=':
-                    operator = '≤'
-                elif operator == '>=':
-                    operator = '≥'
-                
-                # add comparison information with not
-                not_measure_value = f"not_{measure}{operator}{value}"
-                measures.add(not_measure_value)
-                print(f"Rule {rule_name}: Added not scale comparison from combined: {not_measure_value}")
-                
-                # if it is a scale type measure, add basic information
-                if measure in scale_measures:
-                    measures.add(f"scale_{measure}")
-            
-            # process not measures in combined content
-            not_in_combined = re.finditer(not_measures_pattern, combined_content)
-            for not_match in not_in_combined:
-                measure = not_match.group(1).strip()
-                
-                # check if this measure has been processed as comparison
-                full_match = f"not {{{measure}}}"
-                is_comp = re.search(re.escape(full_match) + r'\s*([<>]=?|=|≤|≥)', combined_content)
-                
-                # if it is not a comparison measure, add as a normal not measure
-                if not is_comp:
-                    not_measure = f"not_{measure}"
-                    measures.add(not_measure)
-                    print(f"Rule {rule_name}: Added not measure from combined: {not_measure}")
-                    
-                    # if it is a scale type measure, add basic information
-                    if measure in scale_measures:
-                        measures.add(f"scale_{measure}")
-            
-            # process measures with comparison operators in combined content
-            comp_in_combined = re.finditer(comp_pattern, combined_content)
-            for comp_match in comp_in_combined:
-                measure = comp_match.group(1).strip()
-                operator = comp_match.group(2)
-                value = comp_match.group(3)
-                
-                # normalize operator
-                if operator == '<=':
-                    operator = '≤'
-                elif operator == '>=':
-                    operator = '≥'
-                    
-                # use the same format as above
-                measure_value = f"{measure}{operator}{value}"
-                measures.add(measure_value)
-                print(f"Rule {rule_name}: Added scale comparison from combined: {measure_value}")
-                
-                # if it is a scale type measure, add basic information
-                if measure in scale_measures:
-                    measures.add(f"scale_{measure}")
-            
-            # process normal boolean measures in combined content - use two-step matching
-            all_in_combined = re.finditer(r'\{([^}]+)\}', combined_content)
-            for measure_match in all_in_combined:
-                measure = measure_match.group(1).strip()
-                full_match = f"{{{measure}}}"
-                
-                # check if this measure is a not measure
-                is_not_measure = re.search(r'not\s*' + re.escape(full_match), combined_content)
-                
-                # check if this measure is a comparison measure
-                is_comp_measure = re.search(re.escape(full_match) + r'\s*([<>]=?|=|≤|≥)\s*\w+', combined_content)
-                
-                # if it is neither a not measure nor a comparison measure, it is a normal boolean measure
-                if not is_not_measure and not is_comp_measure:
-                    bool_measure = f"bool_{measure}"
-                    measures.add(bool_measure)
-                    print(f"Rule {rule_name}: Added boolean measure from combined: {bool_measure}")
-                    
-                # if it is a scale type measure, add basic information
-                if measure in scale_measures:
-                    measures.add(f"scale_{measure}")
-        
-        # clean measures (remove empty values and duplicates)
-        measures = {m for m in measures if m}
-        measures_dict[rule_name] = measures
-        print(f"Rule {rule_name}: Final measures: {measures}")
-    
-    return measures_dict
+from __future__ import annotations
 
-def find_rules_with_measures(measures_dict, target_measures):
-    """找到包含指定measures的规则，考虑度量的完整约束信息"""
-    matching_rules = {}
-    conflicting_measures = {}  # store conflicting measures
-    
-    # convert target measures to lowercase for case-insensitive comparison
-    target_measures_lower = [m.lower() for m in target_measures]
-    print(f"Target measures: {target_measures_lower}")
-    
-    # first check if there are conflicting scale values in target measures
-    for i, target1 in enumerate(target_measures_lower):
-        for target2 in target_measures_lower[i+1:]:
-            # check if it is the same measure's value and its negation
-            if target1.startswith("not_") and target2 == target1[4:]:
-                conflicting_measures[(target1, target2)] = f"Measure and its negation: {target2}"
-            elif target2.startswith("not_") and target1 == target2[4:]:
-                conflicting_measures[(target1, target2)] = f"Measure and its negation: {target1}"
-            
-            # check if it is a scale measure's comparison and its negation
-            # for example: riskLevel=high and not_riskLevel=high
-            if "=" in target1 and "=" in target2:
-                # process not_measure=value and measure=value cases
-                if target1.startswith("not_") and "=" in target1[4:]:
-                    measure1 = target1[4:].split("=")[0]  # remove "not_" prefix
-                    value1 = target1[4:].split("=")[1]
-                    measure2 = target2.split("=")[0]
-                    value2 = target2.split("=")[1]
-                    
-                    if measure1 == measure2 and value1 == value2:
-                        conflicting_measures[(target1, target2)] = f"Scale value and its negation: {measure2}={value2}"
-                elif target2.startswith("not_") and "=" in target2[4:]:
-                    measure1 = target1.split("=")[0]
-                    value1 = target1.split("=")[1]
-                    measure2 = target2[4:].split("=")[0]  # remove "not_" prefix
-                    value2 = target2[4:].split("=")[1]
-                    
-                    if measure1 == measure2 and value1 == value2:
-                        conflicting_measures[(target1, target2)] = f"Scale value and its negation: {measure1}={value1}"
-                # process measure=value1 and measure=value2 cases (different values)
-                elif not (target1.startswith("not_") or target2.startswith("not_")):
-                    measure1 = target1.split("=")[0]
-                    value1 = target1.split("=")[1]
-                    measure2 = target2.split("=")[0]
-                    value2 = target2.split("=")[1]
-                    
-                    if measure1 == measure2 and value1 != value2:
-                        conflicting_measures[(target1, target2)] = f"Conflicting scale values: {measure1}={value1} vs {measure2}={value2}"
-    
-    # if conflicting measures are found, return conflict information
-    if conflicting_measures:
-        return {"conflicting_measures": conflicting_measures}
-    
-    # split target measures into positive and negative groups
-    positive_targets = []
-    negative_targets = []
-    
-    for target in target_measures_lower:
-        if target.startswith("not_"):
-            negative_targets.append(target)
-        else:
-            positive_targets.append(target)
-    
-    print(f"Positive targets: {positive_targets}")
-    print(f"Negative targets: {negative_targets}")
-    
-    # process positive and negative target measures separately
-    positive_matching_rules = {}
-    negative_matching_rules = {}
-    
-    # process positive target measures
-    if positive_targets:
-        for rule, measures in measures_dict.items():
-            # convert rule measures to lowercase
-            rule_measures_lower = {m.lower() for m in measures}
-            print(f"Rule {rule} measures: {rule_measures_lower}")
-            
-            # filter out measures with "not_" prefix, only keep positive measures
-            positive_rule_measures = {m for m in rule_measures_lower if not m.startswith("not_")}
-            
-            # check if each positive target measure is in the rule's positive measures
-            matching_measures = []
-            for target in positive_targets:
-                # check if it is a complete constraint search (contains prefix or operator)
-                is_exact_search = (
-                    target.startswith("bool_") or 
-                    target.startswith("scale_") or  # add support for scale type
-                    any(op in target for op in ["<", ">", "=", "≤", "≥"])
-                )
-                
-                if is_exact_search:
-                    # for complete constraint search, try to normalize operator and find match
-                    normalized_target = target
-                    
-                    # normalize operator
-                    if "<=" in target:
-                        normalized_target = target.replace("<=", "≤")
-                    elif ">=" in target:
-                        normalized_target = target.replace(">=", "≥")
-                    
-                    # process possible format differences
-                    if "_<_" in normalized_target:
-                        alt_target = normalized_target.replace("_<_", "<")
-                    elif "_>_" in normalized_target:
-                        alt_target = normalized_target.replace("_>_", ">")
-                    elif "_=_" in normalized_target:
-                        alt_target = normalized_target.replace("_=_", "=")
-                    elif "_≤_" in normalized_target:
-                        alt_target = normalized_target.replace("_≤_", "≤")
-                    elif "_≥_" in normalized_target:
-                        alt_target = normalized_target.replace("_≥_", "≥")
-                    else:
-                        alt_target = normalized_target
-                    
-                    # check if the original target, normalized target or alternative format matches
-                    if (target in positive_rule_measures or 
-                        normalized_target in positive_rule_measures or 
-                        alt_target in positive_rule_measures):
-                        # find the matching actual measure (keep original case)
-                        for measure in measures:
-                            measure_lower = measure.lower()
-                            if (not measure_lower.startswith("not_")) and measure_lower in [target, normalized_target, alt_target]:
-                                matching_measures.append(measure)
-                                print(f"Rule {rule} matched positive target {target} with measure {measure}")
-                                break
-                        else:
-                            # if no exact match is found, add target measure
-                            matching_measures.append(target)
-                            print(f"Rule {rule} matched positive target {target} (no exact match)")
-                else:
-                    # for simple search, find measures containing target
-                    for measure_lower in positive_rule_measures:
-                        # check if measure contains target (consider various prefixes and operators)
-                        base_measure = measure_lower
-                        if measure_lower.startswith("bool_"):
-                            base_measure = measure_lower[5:]  # remove "bool_" prefix
-                        elif measure_lower.startswith("scale_"):  # add support for scale type
-                            base_measure = measure_lower[6:]  # remove "scale_" prefix
-                        else:
-                            # process measures with operators
-                            for op in ["<", ">", "=", "≤", "≥"]:
-                                if op in measure_lower:
-                                    base_measure = measure_lower.split(op)[0]
-                                    break
-                        
-                        if target == base_measure:
-                            # find the matching actual measure (keep original case)
-                            for measure in measures:
-                                measure_lower = measure.lower()
-                                if (not measure_lower.startswith("not_")) and measure_lower == measure_lower:
-                                    matching_measures.append(measure)
-                                    print(f"Rule {rule} matched positive target {target} with measure {measure} (base match)")
-                                    break
-            
-            # check if there are conflicting measures in the rule
-            has_conflicting_measures = False
-            
-            # for each positive target measure, check if there is a corresponding negative measure in the rule
-            for target in positive_targets:
-                # if it is a scale comparison, check if there is a corresponding negative comparison
-                if "=" in target:
-                    measure_name = target.split("=")[0]
-                    value = target.split("=")[1]
-                    negated_measure = f"not_{measure_name}={value}".lower()
-                    
-                    # check if there is this negated measure in the rule
-                    for rule_measure in rule_measures_lower:
-                        if rule_measure == negated_measure:
-                            has_conflicting_measures = True
-                            print(f"Rule {rule} has conflicting measure: {negated_measure}")
-                            break
-                
-                # if it is a normal measure, check if there is a corresponding negative measure
-                else:
-                    negated_measure = f"not_{target}".lower()
-                    
-                    # check if there is this negated measure in the rule
-                    for rule_measure in rule_measures_lower:
-                        if rule_measure == negated_measure:
-                            has_conflicting_measures = True
-                            print(f"Rule {rule} has conflicting measure: {negated_measure}")
-                            break
-                
-                if has_conflicting_measures:
-                    break
-            
-            # only add to matching results when there are no conflicting measures
-            if matching_measures and not has_conflicting_measures:
-                positive_matching_rules[rule] = matching_measures
-                print(f"Added rule {rule} to positive matching rules with measures: {matching_measures}")
-    
-    # process negative target measures
-    if negative_targets:
-        for rule, measures in measures_dict.items():
-            # convert rule measures to lowercase
-            rule_measures_lower = {m.lower() for m in measures}
-            print(f"Rule {rule} measures for negative targets: {rule_measures_lower}")
-            
-            # check if each negative target measure is in the rule's measures
-            matching_measures = []
-            for target in negative_targets:
-                # check if there is a matching measure in the rule
-                found_match = False
-                
-                # 1. first check if there is an exact match in the rule
-                if target.lower() in rule_measures_lower:
-                    # find the matching actual measure (keep original case)
-                    for measure in measures:
-                        if measure.lower() == target.lower():
-                            matching_measures.append(measure)
-                            found_match = True
-                            print(f"Rule {rule} matched negative target {target} with exact measure {measure}")
-                            break
-                
-                # 2. if there is no exact match, check if there is a measure containing "not" in the rule
-                if not found_match and target.startswith("not_"):
-                    # decompose target measure
-                    if "=" in target[4:]:  # process not_measure=value format
-                        measure_name = target[4:].split("=")[0]  # remove "not_" prefix
-                        value = target[4:].split("=")[1]
-                        
-                        # first check if there is an exact match (not_measure=value)
-                        for rule_measure in rule_measures_lower:
-                            if rule_measure == target.lower():
-                                # find the matching actual measure (keep original case)
-                                for measure in measures:
-                                    if measure.lower() == rule_measure:
-                                        matching_measures.append(measure)
-                                        found_match = True
-                                        print(f"Rule {rule} matched negative target {target} with exact extracted measure {measure}")
-                                        break
-                                if found_match:
-                                    break
-                        
-                        # if there is no exact match, check if there is a matching negative scale comparison in the rule
-                        if not found_match:
-                            for rule_measure in rule_measures_lower:
-                                # check if it is not_measure=value format
-                                if rule_measure.startswith("not_") and "=" in rule_measure[4:]:
-                                    rule_measure_name = rule_measure[4:].split("=")[0]
-                                    rule_value = rule_measure[4:].split("=")[1]
-                                    
-                                    if rule_measure_name == measure_name and rule_value == value:
-                                        # find the matching actual measure (keep original case)
-                                        for measure in measures:
-                                            if measure.lower() == rule_measure:
-                                                matching_measures.append(measure)
-                                                found_match = True
-                                                print(f"Rule {rule} matched negative target {target} with measure {measure} (not_measure=value format)")
-                                                break
-                                        if found_match:
-                                            break
-                        
-                        # if there is still no match, try to find the negated condition in the original SLEEC format
-                        if not found_match:
-                            for measure in measures:
-                                measure_lower = measure.lower()
-                                # more precise matching pattern, find "not {measure_name} = value" or "(not {measure_name} = value)" format
-                                if (("not" in measure_lower and 
-                                     "{" + measure_name.lower() + "}" in measure_lower and 
-                                     "=" in measure_lower and 
-                                     value.lower() in measure_lower) or
-                                    # check the format in parentheses
-                                    ("(not" in measure_lower and 
-                                     "{" + measure_name.lower() + "}" in measure_lower and 
-                                     "=" in measure_lower and 
-                                     value.lower() in measure_lower)):
-                                    matching_measures.append(measure)
-                                    found_match = True
-                                    print(f"Rule {rule} matched negative target {target} with measure {measure} (contains not, {measure_name}, {value})")
-                                    break
-                    else:  # process normal not_measure format
-                        measure_name = target[4:]  # remove "not_" prefix
-                        
-                        # first check if there is an exact match (not_measure)
-                        for rule_measure in rule_measures_lower:
-                            if rule_measure == target.lower():
-                                # find the matching actual measure (keep original case)
-                                for measure in measures:
-                                    if measure.lower() == rule_measure:
-                                        matching_measures.append(measure)
-                                        found_match = True
-                                        print(f"Rule {rule} matched negative target {target} with exact extracted measure {measure}")
-                                        break
-                                if found_match:
-                                    break
-                        
-                        # if there is still no match, try to find the negated condition in the original SLEEC format
-                        if not found_match:
-                            for rule_measure in rule_measures_lower:
-                                if rule_measure.startswith("not_") and rule_measure[4:] == measure_name:
-                                    # find the matching actual measure (keep original case)
-                                    for measure in measures:
-                                        if measure.lower() == rule_measure:
-                                            matching_measures.append(measure)
-                                            found_match = True
-                                            print(f"Rule {rule} matched negative target {target} with measure {measure} (not_measure format)")
-                                            break
-                                    if found_match:
-                                        break
-                        
-                        # if there is still no match, try to find the negated condition in the original SLEEC format
-                        if not found_match:
-                            for measure in measures:
-                                measure_lower = measure.lower()
-                                # more precise matching pattern, find "not {measure}" or "(not {measure})" format
-                                if (("not" in measure_lower and 
-                                     "{" + measure_name.lower() + "}" in measure_lower and 
-                                     "=" not in measure_lower) or
-                                    # check the format in parentheses
-                                    ("(not" in measure_lower and 
-                                     "{" + measure_name.lower() + "}" in measure_lower and 
-                                     "=" not in measure_lower)):
-                                    matching_measures.append(measure)
-                                    found_match = True
-                                    print(f"Rule {rule} matched negative target {target} with measure {measure} (contains not and {measure_name})")
-                                    break
-            
-            # check if there is a measure conflicting with the target
-            has_conflicting_measures = False
-            
-            # for each negative target measure, check if there is a corresponding positive measure in the rule
-            for target in negative_targets:
-                if target.startswith("not_") and "=" in target[4:]:
-                    # if it is a negative scale comparison, check if there is a corresponding positive comparison
-                    measure_name = target[4:].split("=")[0]  # remove "not_" prefix
-                    value = target[4:].split("=")[1]
-                    positive_measure = f"{measure_name}={value}".lower()
-                    
-                    # check if there is this positive measure in the rule
-                    has_positive = False
-                    has_negative = False
-                    
-                    for rule_measure in rule_measures_lower:
-                        if rule_measure == positive_measure:
-                            has_positive = True
-                        if rule_measure == target.lower():
-                            has_negative = True
-                    
-                    # only when there is a positive form but no negative form, it is considered a conflict
-                    # if the rule contains both positive and negative forms, it may be due to special cases in the extraction process, and should not be considered a conflict
-                    if has_positive and not has_negative:
-                        has_conflicting_measures = True
-                        print(f"Rule {rule} has conflicting measure for negative target: {positive_measure}")
-                elif target.startswith("not_"):
-                    # if it is a normal negative measure, check if there is a corresponding positive measure
-                    positive_measure = target[4:].lower()  # remove "not_" prefix
-                    
-                    # also check if both positive and negative forms are included
-                    has_positive = False
-                    has_negative = False
-                    
-                    for rule_measure in rule_measures_lower:
-                        if rule_measure == positive_measure or rule_measure.startswith(f"bool_{positive_measure}"):
-                            has_positive = True
-                        if rule_measure == target.lower():
-                            has_negative = True
-                    
-                    # only when there is a positive form but no negative form, it is considered a conflict
-                    if has_positive and not has_negative:
-                        has_conflicting_measures = True
-                        print(f"Rule {rule} has conflicting measure for negative target: {positive_measure}")
-                
-                if has_conflicting_measures:
-                    break
-            
-            # only when there is no conflicting measure in the rule, add to matching results
-            if matching_measures and not has_conflicting_measures:
-                negative_matching_rules[rule] = matching_measures
-                print(f"Added rule {rule} to negative matching rules with measures: {matching_measures}")
-    
-    # merge results, but keep positive and negative measures separate
-    for rule, pos_measures in positive_matching_rules.items():
-        matching_rules[rule] = {"positive": pos_measures}
-    
-    for rule, neg_measures in negative_matching_rules.items():
-        if rule in matching_rules:
-            matching_rules[rule]["negative"] = neg_measures
-        else:
-            matching_rules[rule] = {"negative": neg_measures}
-    
-    print(f"Final matching rules: {matching_rules}")
-    return matching_rules
+import argparse
+import json
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-def display_measures_used_in_rules(measures_dict):
-    """show all measures used in rules"""
-    all_measures = set()
-    for rule, measures in measures_dict.items():
-        for measure in measures:
-            # filter out scale type measures without specific values
-            if not measure.startswith("scale_"):
-                all_measures.add(measure)
-    
-    # sort by alphabet
-    sorted_measures = sorted(list(all_measures))
-    
-    st.subheader("Measures Used in Rules")
-    for measure in sorted_measures:
-        st.write(f"- {measure}")
-    
-    return sorted_measures
 
-def main():
-    st.title("SLEEC Rules Response Analyzer")
-    
-    # file upload or text input
-    input_method = st.radio(
-        "Choose input method:",
-        ["Upload SLEEC file", "Enter SLEEC content"]
+_RULE_START_RE = re.compile(r"^\s*(\S+)\s+when\b", re.IGNORECASE)
+_MUTUAL_EXCLUSIVE_RE = re.compile(r"^\s*mutualExclusive\s+(\S+)\s+(\S+)\s*$", re.IGNORECASE)
+_RESPONSE_RE = re.compile(r"\bthen\s+((?:not\s+)?[A-Za-z_]\w*)\b", re.IGNORECASE)
+_MEASURE_REF_RE = re.compile(r"(?P<neg>\bnot\s*)?\{(?P<name>[^}]+)\}", re.IGNORECASE)
+_DEFAULT_OUTPUT_ROOT = Path("rules")
+
+
+@dataclass(frozen=True)
+class Rule:
+    rule_id: str
+    text: str
+    responses: Tuple[str, ...]
+    measures: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SleecDocument:
+    original_text: str
+    def_block: str
+    rules: Tuple[Rule, ...]
+    mutual_exclusive_pairs: Tuple[Tuple[str, str], ...]
+
+
+def _strip_comment_lines(text: str) -> str:
+    lines: List[str] = []
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("//"):
+            continue
+        lines.append(raw)
+    return "\n".join(lines)
+
+
+def _find_block(text: str, start_marker: str, end_marker: str) -> str:
+    start = text.find(start_marker)
+    if start == -1:
+        return ""
+    end = text.find(end_marker, start + len(start_marker))
+    if end == -1:
+        return ""
+    return text[start : end + len(end_marker)]
+
+
+def _extract_between(text: str, start_marker: str, end_marker: str) -> str:
+    start = text.find(start_marker)
+    if start == -1:
+        return ""
+    start += len(start_marker)
+    end = text.find(end_marker, start)
+    if end == -1:
+        return ""
+    return text[start:end]
+
+
+def _extract_def_block(original_text: str) -> str:
+    block = _find_block(original_text, "def_start", "def_end")
+    if block:
+        return block.strip() + "\n"
+    return ""
+
+
+def _extract_rule_region(original_text: str) -> str:
+    region = _extract_between(original_text, "rule_start", "rule_end")
+    if region:
+        return region
+    return original_text
+
+
+def _extract_relation_region(original_text: str) -> str:
+    region = _extract_between(original_text, "relation_start", "relation_end")
+    return region
+
+
+def _parse_mutual_exclusive_pairs(original_text: str) -> List[Tuple[str, str]]:
+    region = _extract_relation_region(original_text)
+    if not region.strip():
+        return []
+
+    pairs: List[Tuple[str, str]] = []
+    for raw in region.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("//"):
+            continue
+        match = _MUTUAL_EXCLUSIVE_RE.match(line)
+        if not match:
+            continue
+        a, b = match.group(1).strip(), match.group(2).strip()
+        if a and b:
+            pairs.append((a, b))
+    return pairs
+
+
+def _parse_rules(original_text: str) -> List[Rule]:
+    region = _extract_rule_region(original_text)
+    lines = region.splitlines()
+
+    rules: List[Rule] = []
+    current_id: Optional[str] = None
+    current_lines: List[str] = []
+
+    def flush() -> None:
+        nonlocal current_id, current_lines
+        if not current_id:
+            current_lines = []
+            return
+        rule_text = "\n".join(current_lines).strip()
+        cleaned = _strip_comment_lines(rule_text)
+        normalized = " ".join(cleaned.split())
+        responses = tuple(dict.fromkeys(_RESPONSE_RE.findall(normalized)))
+        measures_found: Set[str] = set()
+        for match in _MEASURE_REF_RE.finditer(normalized):
+            name = (match.group("name") or "").strip()
+            if not name:
+                continue
+            is_negated = bool(match.group("neg"))
+            token = f"not_{name}" if is_negated else name
+            measures_found.add(token)
+        measures = tuple(sorted(measures_found))
+        rules.append(Rule(rule_id=current_id, text=rule_text + "\n", responses=responses, measures=measures))
+        current_id = None
+        current_lines = []
+
+    for raw in lines:
+        match = _RULE_START_RE.match(raw)
+        if match:
+            flush()
+            current_id = match.group(1).strip()
+            current_lines = [raw.rstrip()]
+            continue
+
+        if current_id is not None:
+            current_lines.append(raw.rstrip())
+
+    flush()
+    return rules
+
+
+def load_sleec(path: Path) -> SleecDocument:
+    text = path.read_text(encoding="utf-8")
+    return SleecDocument(
+        original_text=text,
+        def_block=_extract_def_block(text),
+        rules=tuple(_parse_rules(text)),
+        mutual_exclusive_pairs=tuple(_parse_mutual_exclusive_pairs(text)),
     )
-    
-    sleec_content = ""
-    
-    if input_method == "Upload SLEEC file":
-        uploaded_file = st.file_uploader("Upload your SLEEC file", type=['sleec', 'txt'])
-        if uploaded_file:
-            sleec_content = uploaded_file.getvalue().decode()
-    else:
-        sleec_content = st.text_area(
-            "Enter your SLEEC rules:",
-            height=300,
-            placeholder="Rule1 when ... then ...\nRule2 when ... then ..."
+
+
+def group_rules_by_response(rules: Sequence[Rule]) -> Dict[str, List[Rule]]:
+    grouped: Dict[str, List[Rule]] = {}
+    for rule in rules:
+        for response in rule.responses:
+            grouped.setdefault(response, []).append(rule)
+    return grouped
+
+
+def group_rules_by_measure(rules: Sequence[Rule]) -> Dict[str, List[Rule]]:
+    grouped: Dict[str, List[Rule]] = {}
+    for rule in rules:
+        for measure in rule.measures:
+            grouped.setdefault(measure, []).append(rule)
+    return grouped
+
+
+def filter_shared_responses(
+    rules: Sequence[Rule],
+    *,
+    min_count: int = 2,
+) -> Dict[str, List[Rule]]:
+    grouped = group_rules_by_response(rules)
+    return {resp: lst for resp, lst in grouped.items() if len(lst) >= min_count}
+
+
+def filter_shared_measures(
+    rules: Sequence[Rule],
+    *,
+    min_count: int = 2,
+) -> Dict[str, List[Rule]]:
+    grouped = group_rules_by_measure(rules)
+    return {measure: lst for measure, lst in grouped.items() if len(lst) >= min_count}
+
+
+def filter_rules_by_measures(
+    rules: Sequence[Rule],
+    target_measures: Sequence[str],
+    *,
+    match: str = "all",
+) -> List[Rule]:
+    targets = [m.strip() for m in target_measures if m.strip()]
+    if not targets:
+        raise ValueError("No measures provided.")
+
+    match = match.lower()
+    if match not in {"all", "any"}:
+        raise ValueError("match must be 'all' or 'any'.")
+
+    selected: List[Rule] = []
+    target_set = {m.lower() for m in targets}
+    for rule in rules:
+        rule_measures = {m.lower() for m in rule.measures}
+        if match == "all":
+            ok = target_set.issubset(rule_measures)
+        else:
+            ok = bool(target_set.intersection(rule_measures))
+        if ok:
+            selected.append(rule)
+    return selected
+
+
+def extract_mutual_exclusive_groups(
+    rules: Sequence[Rule],
+    pairs: Sequence[Tuple[str, str]],
+) -> List[Tuple[Tuple[str, str], List[Rule], List[Rule]]]:
+    by_response = group_rules_by_response(rules)
+    groups: List[Tuple[Tuple[str, str], List[Rule], List[Rule]]] = []
+    for a, b in pairs:
+        rules_a = list(by_response.get(a, []))
+        rules_b = list(by_response.get(b, []))
+        if not rules_a and not rules_b:
+            continue
+
+        a_ids = {r.rule_id for r in rules_a}
+        b_ids = {r.rule_id for r in rules_b}
+        overlap = a_ids.intersection(b_ids)
+        if overlap:
+            rules_a = [r for r in rules_a if r.rule_id not in overlap]
+            rules_b = [r for r in rules_b if r.rule_id not in overlap]
+
+        groups.append(((a, b), rules_a, rules_b))
+    return groups
+
+
+def _format_summary_json_shared_responses(groups: Dict[str, List[Rule]]) -> str:
+    payload = {resp: [r.rule_id for r in rules] for resp, rules in sorted(groups.items())}
+    return json.dumps(payload, indent=2, sort_keys=True)
+
+
+def _format_summary_json_mutual_exclusive(
+    groups: List[Tuple[Tuple[str, str], List[Rule], List[Rule]]],
+) -> str:
+    payload = []
+    for (a, b), rules_a, rules_b in groups:
+        payload.append(
+            {
+                "pair": [a, b],
+                "rules": {a: [r.rule_id for r in rules_a], b: [r.rule_id for r in rules_b]},
+            }
         )
-    
-    if sleec_content:
-        # analysis type selection
-        analysis_type = st.radio(
-            "Choose analysis type:",
-            ["Shared Responses", "Mutually Exclusive Responses", "Shared Measures"]
+    return json.dumps(payload, indent=2)
+
+
+def _format_summary_json_shared_measures(
+    rules: Sequence[Rule],
+    targets: Sequence[str],
+) -> str:
+    target_set = {t.strip().lower() for t in targets if t.strip()}
+    payload = []
+    for rule in rules:
+        rule_measures = {m.lower() for m in rule.measures}
+        payload.append(
+            {
+                "rule_id": rule.rule_id,
+                "matched_measures": sorted(rule_measures.intersection(target_set)),
+                "all_measures": list(rule.measures),
+            }
         )
-        
-        # analyze rules
-        rules_by_response, rule_responses, rules_full_text = extract_responses(sleec_content)
-        
-        if analysis_type == "Shared Responses":
-            # show rules grouped by shared response
-            st.subheader("Rules Grouped by Shared Response")
-            shared_groups = {resp: rules for resp, rules in rules_by_response.items() 
-                           if len(rules) > 1}
-            
-            for response, rules in shared_groups.items():
-                with st.expander(f"Response: {response} ({len(rules)} rules)"):
-                    st.write("Rules:", ", ".join(rules))
-            
-            # add export button
-            if shared_groups:
-                sleec_content_output = generate_sleec_file(shared_groups, rules_full_text, True, sleec_content)
-                st.download_button(
-                    "Download SLEEC file with shared responses",
-                    sleec_content_output,
-                    "shared_responses.sleec",
-                    "text/plain"
-                )
-        
-        elif analysis_type == "Mutually Exclusive Responses":
-            # analyze mutually exclusive responses
-            st.subheader("Define Mutually Exclusive Responses")
-            
-            num_pairs = st.number_input("Number of mutually exclusive pairs", 
-                                      min_value=1, value=1)
-            
-            mutual_exclusive_pairs = []
-            for i in range(num_pairs):
-                col1, col2, col3 = st.columns([2,1,2])
-                with col1:
-                    response1 = st.text_input(f"Response {i+1} A", key=f"resp1_{i}")
-                with col2:
-                    st.markdown("### mutually<br>exclusive", unsafe_allow_html=True)
-                with col3:
-                    response2 = st.text_input(f"Response {i+1} B", key=f"resp2_{i}")
-                
-                if response1 and response2:
-                    mutual_exclusive_pairs.append((response1, response2))
-            
-            if mutual_exclusive_pairs:
-                exclusive_groups = find_mutually_exclusive_rules(
-                    rules_by_response, 
-                    rule_responses,
-                    mutual_exclusive_pairs
-                )
-                
-                if exclusive_groups:
-                    st.subheader("Rules with Mutually Exclusive Responses")
-                    for i, group in enumerate(exclusive_groups, 1):
-                        with st.expander(f"Mutually Exclusive Group {i}"):
-                            for response, rules in group.items():
-                                if rules:
-                                    st.write(f"Response '{response}':")
-                                    st.write("Rules:", ", ".join(rules))
-                    
-                    # add export button
-                    sleec_content_output = generate_sleec_file(exclusive_groups, rules_full_text, False, sleec_content)
-                    st.download_button(
-                        "Download SLEEC file with mutually exclusive responses",
-                        sleec_content_output,
-                        "mutually_exclusive_responses.sleec",
-                        "text/plain"
-                    )
-                else:
-                    st.info("No valid mutually exclusive rules found")
-        
-        elif analysis_type == "Shared Measures":
-            # extract all measures directly from the def section
-            def_match = re.search(r'def_start(.*?)def_end', sleec_content, re.DOTALL)
-            all_measures = []  # use list instead of set to keep order
-            
-            if def_match:
-                def_content = def_match.group(1)
-                # match measure definition lines, ignore comment lines
-                for line in def_content.split('\n'):
-                    line = line.strip()
-                    if line and not line.startswith('//'):
-                        # match measure definition
-                        match = re.match(r'measure\s+(\w+)\s*:\s*(boolean|numeric)', line)
-                        if match:
-                            measure_name = match.group(1)
-                            measure_type = match.group(2)
-                            all_measures.append(measure_name)
-            
-            st.subheader("Available Measures")
-            if all_measures:
-                st.write("All measures found in definitions:", ", ".join(sorted(all_measures)))
+    return json.dumps(payload, indent=2)
+
+
+def write_sleec_subset(
+    doc: SleecDocument,
+    rules_to_keep: Iterable[Rule],
+    output_path: Path,
+    *,
+    header_comments: Optional[Sequence[str]] = None,
+    include_relation_block: bool = False,
+    relation_pairs: Optional[Sequence[Tuple[str, str]]] = None,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    rules_list = list(rules_to_keep)
+
+    parts: List[str] = []
+    if doc.def_block:
+        parts.append(doc.def_block.rstrip("\n"))
+    parts.append("rule_start")
+    if header_comments:
+        for line in header_comments:
+            parts.append(f"// {line}".rstrip())
+    for rule in rules_list:
+        parts.append(rule.text.rstrip("\n"))
+    parts.append("rule_end")
+
+    if include_relation_block and relation_pairs:
+        parts.append("")
+        parts.append("relation_start")
+        for a, b in relation_pairs:
+            parts.append(f"mutualExclusive {a} {b}")
+        parts.append("relation_end")
+
+    output_path.write_text("\n".join(parts).rstrip() + "\n", encoding="utf-8")
+
+
+def default_output_path(input_path: Path, label: str) -> Path:
+    """Return the default output path under rules/."""
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", label.strip()) or "output"
+    return _DEFAULT_OUTPUT_ROOT / f"{input_path.stem}_{safe}.sleec"
+
+
+def write_shared_response_groups(
+    doc: SleecDocument,
+    groups: Dict[str, List[Rule]],
+    output_path: Path,
+    *,
+    min_count: int,
+) -> None:
+    """Write a combined SLEEC file with response-group comment headers."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    parts: List[str] = []
+    if doc.def_block:
+        parts.append(doc.def_block.rstrip("\n"))
+    parts.append("rule_start")
+    parts.append(f"// Shared-responses extraction (min_count={min_count})")
+
+    written: Set[str] = set()
+    for response, rules_list in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        parts.append("")
+        parts.append(f"// Shared response: {response} ({len(rules_list)} rules)")
+        group_written: List[str] = []
+        group_skipped: List[str] = []
+        for rule in rules_list:
+            if rule.rule_id in written:
+                group_skipped.append(rule.rule_id)
+                continue
+            written.add(rule.rule_id)
+            group_written.append(rule.rule_id)
+            parts.append(rule.text.rstrip("\n"))
+        if group_skipped:
+            parts.append(f"// (already included above): {', '.join(group_skipped)}")
+        if not group_written:
+            parts.append("// (no new rules in this group)")
+
+    parts.append("rule_end")
+    output_path.write_text("\n".join(parts).rstrip() + "\n", encoding="utf-8")
+
+
+def write_shared_measure_groups(
+    doc: SleecDocument,
+    groups: Dict[str, List[Rule]],
+    output_path: Path,
+    *,
+    min_count: int,
+) -> None:
+    """Write a combined SLEEC file with measure-group comment headers (rules may repeat across groups)."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    parts: List[str] = []
+    if doc.def_block:
+        parts.append(doc.def_block.rstrip("\n"))
+    parts.append("rule_start")
+    parts.append(f"// Shared-measures extraction (min_count={min_count})")
+
+    for measure, rules_list in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        parts.append("")
+        parts.append(f"// Shared measure: {measure} ({len(rules_list)} rules)")
+        for rule in rules_list:
+            parts.append(rule.text.rstrip("\n"))
+
+    parts.append("rule_end")
+    output_path.write_text("\n".join(parts).rstrip() + "\n", encoding="utf-8")
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Extract rule subsets from a SLEEC file.")
+    parser.add_argument("sleec", type=Path, help="Path to input .sleec file.")
+    parser.add_argument("--format", choices=["text", "json"], default="text", help="Summary output format.")
+    parser.add_argument(
+        "--no-write",
+        action="store_true",
+        help="Do not write any output files (print summaries only).",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    shared = subparsers.add_parser("shared-responses", help="Find rules sharing the same response event.")
+    shared.add_argument("--min-count", type=int, default=2, help="Minimum rules per shared-response group.")
+    shared.add_argument("--output", type=Path, help="Write selected rules to a new .sleec file.")
+    shared.add_argument("--output-dir", type=Path, help="Write one .sleec per response into this directory.")
+
+    measures = subparsers.add_parser("shared-measures", help="Find rules referencing specified measures.")
+    measures.add_argument(
+        "--measures",
+        nargs="+",
+        help="Measure names to match (without braces). If omitted, prints all measures shared by >=2 rules.",
+    )
+    measures.add_argument("--match", choices=["all", "any"], default="all", help="Match rule measures by all/any.")
+    measures.add_argument(
+        "--min-count",
+        type=int,
+        default=2,
+        help="Minimum rules per shared-measure group (grouping mode only).",
+    )
+    measures.add_argument("--output", type=Path, help="Write selected rules to a new .sleec file.")
+    measures.add_argument("--output-dir", type=Path, help="Write one .sleec per measure into this directory.")
+
+    excl = subparsers.add_parser(
+        "mutual-exclusive",
+        help="Extract rules participating in mutualExclusive response pairs declared in the file.",
+    )
+    excl.add_argument("--output", type=Path, help="Write selected rules to a new .sleec file.")
+    excl.add_argument("--relations", action=argparse.BooleanOptionalAction, default=True)
+    excl.add_argument(
+        "--require-both",
+        action="store_true",
+        help="Only keep pairs where both response groups have at least one rule.",
+    )
+
+    return parser.parse_args()
+
+
+def _print_text_shared_responses(groups: Dict[str, List[Rule]]) -> None:
+    if not groups:
+        print("(no shared responses found)")
+        return
+    for resp, rules in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        rule_ids = ", ".join(r.rule_id for r in rules)
+        print(f"{resp} ({len(rules)}): {rule_ids}")
+
+
+def _print_text_shared_measures_groups(groups: Dict[str, List[Rule]]) -> None:
+    if not groups:
+        print("(no shared measures found)")
+        return
+    for measure, rules_list in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        rule_ids = ", ".join(r.rule_id for r in rules_list)
+        print(f"{measure} ({len(rules_list)}): {rule_ids}")
+
+
+def _print_text_shared_measures(selected: Sequence[Rule], targets: Sequence[str]) -> None:
+    if not selected:
+        print("(no matching rules found)")
+        return
+    target_set = {t.strip().lower() for t in targets if t.strip()}
+    for rule in selected:
+        matched = [m for m in rule.measures if m.lower() in target_set]
+        matched_str = ", ".join(matched) if matched else "(none)"
+        print(f"{rule.rule_id}: matched {matched_str}")
+
+
+def _print_text_mutual_exclusive(groups: List[Tuple[Tuple[str, str], List[Rule], List[Rule]]]) -> None:
+    if not groups:
+        print("(no mutualExclusive relations found)")
+        return
+    for (a, b), rules_a, rules_b in groups:
+        a_ids = ", ".join(r.rule_id for r in rules_a) if rules_a else "(none)"
+        b_ids = ", ".join(r.rule_id for r in rules_b) if rules_b else "(none)"
+        print(f"{a} ⟂ {b}")
+        print(f"  {a}: {a_ids}")
+        print(f"  {b}: {b_ids}")
+
+
+def main() -> None:
+    args = _parse_args()
+    doc = load_sleec(args.sleec)
+
+    if args.command == "shared-responses":
+        groups = filter_shared_responses(doc.rules, min_count=args.min_count)
+        if args.format == "json":
+            print(_format_summary_json_shared_responses(groups))
+        else:
+            _print_text_shared_responses(groups)
+
+        output_path = args.output
+        if output_path is None and not args.no_write:
+            output_path = default_output_path(args.sleec, "shared_responses")
+        if output_path and not args.no_write:
+            if groups:
+                write_shared_response_groups(doc, groups, output_path, min_count=args.min_count)
             else:
-                st.write("No measures found in definitions")
-            
-            # extract measures from rules for search
-            measures_dict = extract_measures(sleec_content)
-            
-            # use new function to show all measures, filter out scale type measures without specific values
-            all_measures_in_rules = display_measures_used_in_rules(measures_dict)
-            
-            measure_input = st.text_area(
-                "Enter measures to search (one per line):",
-                placeholder="userPayingAttention\nUserAge < legalAge"
-            )
-            
-            if measure_input:
-                target_measures = [m.strip() for m in measure_input.split('\n') if m.strip()]
-                matching_rules = find_rules_with_measures(measures_dict, target_measures)
-                
-                if matching_rules:
-                    st.subheader("Rules with Matching Measures")
-                    for rule, measures in matching_rules.items():
-                        with st.expander(f"{rule} - Matching Measures"):
-                            st.write("Measures found:", ", ".join(measures))
-                            if rule in rules_full_text:
-                                st.write("Rule content:")
-                                st.code(rules_full_text[rule])
-                    
-                    # add export button
-                    content = ["rule_start"]
-                    content.append("\n// Rules sharing specified measures:")
-                    content.extend(f"// {measure}" for measure in target_measures)
-                    for rule in matching_rules:
-                        if rule in rules_full_text:
-                            content.append(rules_full_text[rule])
-                    content.append("\nrule_end")
-                    
-                    st.download_button(
-                        "Download SLEEC file with shared measures",
-                        "\n".join(content),
-                        "shared_measures.sleec",
-                        "text/plain"
-                    )
+                print("(no matching rules; no file written)")
+
+        if args.output_dir:
+            args.output_dir.mkdir(parents=True, exist_ok=True)
+            for response, rules in sorted(groups.items()):
+                safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", response)
+                out_path = args.output_dir / f"shared_response_{safe}.sleec"
+                write_sleec_subset(
+                    doc,
+                    rules,
+                    out_path,
+                    header_comments=[f"Shared response: {response}", f"rule_count={len(rules)}"],
+                )
+
+        return
+
+    if args.command == "shared-measures":
+        if args.measures:
+            selected = filter_rules_by_measures(doc.rules, args.measures, match=args.match)
+            if args.format == "json":
+                print(_format_summary_json_shared_measures(selected, args.measures))
+            else:
+                _print_text_shared_measures(selected, args.measures)
+
+            output_path = args.output
+            if output_path is None and not args.no_write:
+                output_path = default_output_path(args.sleec, "shared_measures")
+            if output_path and not args.no_write:
+                if selected:
+                    write_sleec_subset(doc, selected, output_path)
                 else:
-                    st.info("No rules found with the specified measures")
+                    print("(no matching rules; no file written)")
+            return
+
+        groups = filter_shared_measures(doc.rules, min_count=args.min_count)
+        if args.format == "json":
+            payload = {m: [r.rule_id for r in lst] for m, lst in sorted(groups.items())}
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            _print_text_shared_measures_groups(groups)
+
+        output_path = args.output
+        if output_path is None and not args.no_write:
+            output_path = default_output_path(args.sleec, "shared_measures_groups")
+        if output_path and not args.no_write:
+            if groups:
+                write_shared_measure_groups(doc, groups, output_path, min_count=args.min_count)
+            else:
+                print("(no matching measures; no file written)")
+
+        if args.output_dir:
+            args.output_dir.mkdir(parents=True, exist_ok=True)
+            for measure, rules_list in sorted(groups.items()):
+                safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", measure)
+                out_path = args.output_dir / f"shared_measure_{safe}.sleec"
+                write_sleec_subset(
+                    doc,
+                    rules_list,
+                    out_path,
+                    header_comments=[f"Shared measure: {measure}", f"rule_count={len(rules_list)}"],
+                )
+        return
+
+    if args.command == "mutual-exclusive":
+        groups = extract_mutual_exclusive_groups(doc.rules, doc.mutual_exclusive_pairs)
+        if args.require_both:
+            groups = [group for group in groups if group[1] and group[2]]
+        if args.format == "json":
+            print(_format_summary_json_mutual_exclusive(groups))
+        else:
+            _print_text_mutual_exclusive(groups)
+
+        selected_rules: List[Rule] = []
+        seen: Set[str] = set()
+        for _, rules_a, rules_b in groups:
+            for rule in [*rules_a, *rules_b]:
+                if rule.rule_id not in seen:
+                    seen.add(rule.rule_id)
+                    selected_rules.append(rule)
+
+        output_path = args.output
+        if output_path is None and not args.no_write:
+            output_path = default_output_path(args.sleec, "mutual_exclusive")
+        if output_path and not args.no_write:
+            if selected_rules:
+                write_sleec_subset(
+                    doc,
+                    selected_rules,
+                    output_path,
+                    include_relation_block=args.relations,
+                    relation_pairs=doc.mutual_exclusive_pairs if args.relations else None,
+                )
+            else:
+                print("(no matching rules; no file written)")
+        return
+
+    raise SystemExit(f"Unknown command: {args.command}")
+
 
 if __name__ == "__main__":
-    main() 
+    main()
