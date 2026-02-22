@@ -1,42 +1,71 @@
-# LEGOS-TRAVERSE
+# Supplementary material for:
+# From Rules to Scenarios: Validating Normative Requirements via Contextualised Textual Scenarios
 
-Lightweight tooling for generating LTS traces with the LEGOs stack and probing augmentation strategies over those traces. The repository now focuses purely on backend logic—no Streamlit or UI layer.
+## This repo contains:
+- The LEGOs-based pipeline for generating traces and augmenting them into scene timelines.
+- Context extraction tooling for building a fixed measure domain from background text.
+- Sample assets (SLEEC domains, background contexts, traces, and augmentation outputs).
 
-## Quick Start
+# Instruction for running the pipeline:
+### prerequisite:
+1. Python 3.10 and later
+2. `pip install -r requirements.txt`
+3. LEGOs trace generation uses additional dependencies (pysmt, z3-solver, textx, ordered-set). Follow LEGOs folder README.md for instruction. With this, you could run `legos_integration.py`
+
+### Run the pipeline
+Generate a trace from SLEEC:
 ```bash
-conda env create -f environment.yml
-conda activate legos-traverse
-
-# Augment an existing LTS
-python run_augmentation.py input_lts.aut --mode domain --api-key <KEY>
+python legos_integration.py \
+  --sleec domains/DAISY.sleec \
+  --time-window 600 \
+  --output traces/DAISY_ALL_600.txt
 ```
 
-## Core Modules
-- `legos_integration.py` – Thin wrapper around LEGOs’ parser utilities for producing traces.
-- `augmentation/`
-  - `config.py` – Defines the augmentation modes (`domain-only`, `fixed extra dimensions`, `context-enriched`).
-  - `prompt_builder.py` – Builds model prompts according to the selected mode.
-  - `llm.py` – Minimal OpenAI/DeepSeek chat completion wrapper.
-  - `response_parser.py` – Splits the model response into LTS, mapping, and scene summary.
-  - `io_utils.py` – Helpers for loading the source LTS and saving augmentation artefacts.
-- `run_augmentation.py` – CLI entry-point for running augmentation experiments.
-- `extract_context.py`, `extract_sleec_properties.py`, `extract_combined_properties.py` – Optional scripts for mining contextual properties from case studies or SLEEC rules (no UI dependencies).
+Extract the measure domain from background context:
+```bash
+OPENAI_API_KEY=... python extract_context.py \
+  backgrounds/DAISY.txt \
+  --output extractions/DAISY.json
+```
 
-## Augmentation Workflow
-1. Start from an LTS (e.g., `input_lts.aut`) generated via LEGOs or your own tooling.
-2. Choose an augmentation mode via the CLI:
-   - `domain` – stay strictly within the existing event/measure universe.
-   - `dimensions` – allow a fixed set of extra contextual dimensions (time/weather/location/etc.).
-   - `context` – ground the augmentation with external domain text (e.g., `DAISY.txt`).
-3. Review the generated artefacts in the selected output directory:
-   - `l1.aut` – original LTS
-   - `l2.aut` – augmented LTS
-   - `rename.ren` – mapping between augmented and original transitions
-   - `augment_scene.txt` – concise scene timeline
-   - `augmented_response.txt` – raw model response
+Augment the trace with the extracted measure domain:
+```bash
+OPENAI_API_KEY=... python run_augmentation.py \
+  traces/DAISY_ALL_600.txt \
+  --measure-domain extractions/DAISY.json \
+  --output-dir augments/demo
+```
 
-## API Keys
-Provide your `OPENAI_API_KEY` (or pass the key via `--api-key`). DeepSeek users must also set `--base-url`.
+Outputs (under the chosen output dir):
+- `augment_scene.txt` - natural-language scene timeline with CLOCK annotations
+- `legos_augment_trace.txt` - LEGOs-style trace with original events plus Measure(...)
 
-## License
-MIT – see `LICENSE`.
+### Utilities
+Only keep mutual-exclusive pairs where both sides appear in rules:
+```bash
+python rules.py domains/ALMI.sleec mutual-exclusive --require-both
+```
+
+Filter measures in a trace to those used by a rule subset:
+```bash
+python clean.py traces/DAISY_ALL_600.txt domains/DAISY.sleec --rules R1 R4
+```
+
+### Sample assets
+Please find here the core inputs used in the pipeline:
+
+1. [ALMI background](backgrounds/ALMI.txt) and [SLEEC](domains/ALMI.sleec)
+2. [ASPEN background](backgrounds/ASPEN.txt) and [SLEEC](domains/ASPEN.sleec)
+3. [DAISY background](backgrounds/DAISY.txt) and [SLEEC](domains/DAISY.sleec)
+
+### Repo layout
+- `domains/` - SLEEC specs
+- `backgrounds/` - natural-language context files
+- `traces/` - LEGOs-generated traces
+- `augments/` - augmentation outputs
+- `extractions/` - context extraction outputs
+- `LEGOs/` - vendored upstream LEGOs toolkit
+
+### API keys
+Set `OPENAI_API_KEY` or pass `--api-key` for scripts that call OpenAI.
+Do not commit keys.
