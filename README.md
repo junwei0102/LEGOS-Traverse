@@ -69,3 +69,6 @@ Please find here the core inputs used in the pipeline:
 ### API keys
 Set `OPENAI_API_KEY` or pass `--api-key` for scripts that call OpenAI.
 Do not commit keys.
+
+### Acknowledgement
+This repository uses the [LEGOs](https://github.com/NickF0211/LEGOs/tree/master) codebase.
