@@ -60,17 +60,6 @@ rule_start
 
     R4 when PreparingDrone and {onIndigenousLand} then not DeployDrone
     unless {landTreatyInPlace} then DeployDrone
-    //***********  resolve situational conflict 1 (MERGE R4 and R13 in R4b)
-    // comment R4 and  R13, uncomment R4b
-    // R4b  when PreparingDrone and (({onIndigenousLand} and (not {landTreatyInPlace})) or
-    //                   (({battery} = low) or ({storage} = low) or {damages}))  then not DeployDrone
-    //                    unless {landTreatyInPlace} and  then DeployDrone
-        //*********** resolve concern 5 (Refine corrected and merge rule R4b) *******
-    // comment R4b and uncomment R4bb
-    // R4bb when PreparingDrone and (({onIndigenousLand} and (not {landTreatyInPlace})) or
-    //	(({battery} = low) or ((({store} = low) or {damages}) or 
-    //             ({flightCondition} = dangerous))))  then not DeployDrone
-        //*****************************************************************
 
     R5 when DeployDrone and {relevantLand} then MonitorLand
 
@@ -93,30 +82,32 @@ rule_start
     R9 when TakePictures and {humanIdentified} then AnonymizeHuman
     unless {unrelatedActivity} then DeletePictures
 
-
-    //*********** resolve concern c7 (ADD two rules and an event)
-    // uncomment R9b1 and R9b2
-    // R9b1 when DeletePictures then  InformKeeper
-    // R9b2 when DeletePictures then  LogDroneAction
-    //*****************************************************************
-
     R10 when ImplementASPEN then EnsureCompliance
 
-    //*********** resolve C7  (ADD a rule 10b)
-    // uncomment R10b
-    // R10b when EnsureCompliance then InformKeeper
-    //*****************************************************************
+    // R11 when DeployDrone and ({flightCondition} < fc_safe) then ReturnHome
+    // unless ({flightCondition} = fc_dangerous) then GroundDrone
 
-    R11 when DeployDrone and ({flightCondition} < fc_safe) then ReturnHome
-    unless ({flightCondition} = fc_dangerous) then GroundDrone
+    R11_a when DeployDrone and ({flightCondition} = fc_dangerous)
+    then GroundDrone
+
+    R11_b when DeployDrone and (({flightCondition} < fc_safe) and (not ({flightCondition} = fc_dangerous)))
+        then ReturnHome
 
     R11_cont when ReturnHome then InformKeeper
 
     R11_cont_1 when GroundDrone then InformKeeper
 
-    R12 when EncounterWildlife then AvoidInterference
-    unless {wildlifeDisturbed} then BackUp within 0 seconds
-    unless {wildlifeInteractswithDrone} then ExitArea within 1 minutes
+    // R12 when EncounterWildlife then AvoidInterference
+    // unless {wildlifeDisturbed} then BackUp within 0 seconds
+    // unless {wildlifeInteractswithDrone} then ExitArea within 1 minutes
+    R12_a when EncounterWildlife and {wildlifeInteractswithDrone}
+    then ExitArea within 1 minutes
+
+    R12_b when EncounterWildlife and ((not {wildlifeInteractswithDrone}) and {wildlifeDisturbed})
+        then BackUp within 0 seconds
+
+    R12_c when EncounterWildlife and ((not {wildlifeInteractswithDrone}) and (not {wildlifeDisturbed}))
+        then AvoidInterference
 
     R12_1 when EncounterWildlife and {wildlifeInteractswithDrone} then InformKeeper
 
@@ -132,3 +123,38 @@ rule_start
     R15 when DeployDrone and {unKnownObject} then TakePictures
 
 rule_end
+
+relation_start
+    // ===== Speech(Communication) =====
+    mutualExclusive InformHuman InformKeeper
+
+
+    // ===== Navigation / Motion Control =====
+    mutualExclusive BackUp ExitArea
+    mutualExclusive BackUp ReturnHome
+    mutualExclusive BackUp AvoidInterference
+    mutualExclusive ExitArea ReturnHome
+    mutualExclusive ExitArea AvoidInterference
+    mutualExclusive ReturnHome AvoidInterference
+
+
+    // ===== FlightState =====
+    mutualExclusive PreparingDrone DeployDrone
+    mutualExclusive PreparingDrone GroundDrone
+    mutualExclusive DeployDrone GroundDrone
+
+
+    // ===== Multispectral Camera =====
+    // (only two events in this bucket)
+    mutualExclusive MonitorLand MonitorCarbon
+
+
+    // ===== RGB Camera =====
+    mutualExclusive HumanNearby EncounterWildlife
+    mutualExclusive HumanNearby TakePictures
+    mutualExclusive EncounterWildlife TakePictures
+
+
+    // ===== Drone Scissor =====
+    // (only one event in this bucket, so no mutualExclusive pairs needed)
+relation_end

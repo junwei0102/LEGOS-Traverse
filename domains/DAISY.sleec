@@ -155,3 +155,92 @@ Rule24 when MeetingPatient and ((not {patientAgeConsidered}) and (not {guardianC
 Rule25 when MeetingUser and (not {trainingDataRepresentative})  then CallSupport within [5 minutes, 10 minutes]
 // **************************************************
 rule_end
+
+relation_start
+ // ===== Speech =====
+mutualExclusive MeetingPatient AddressUserName
+mutualExclusive MeetingPatient AddressSirOrMadam
+mutualExclusive MeetingPatient Speaking
+mutualExclusive MeetingPatient RepeatInstruction
+mutualExclusive MeetingPatient ProvideInfo
+mutualExclusive MeetingPatient InformUserandandReferToHumanCarer
+mutualExclusive MeetingPatient MeetingUser
+mutualExclusive MeetingPatient informDaisyAbilities
+
+mutualExclusive AddressUserName AddressSirOrMadam
+mutualExclusive AddressUserName Speaking
+mutualExclusive AddressUserName RepeatInstruction
+mutualExclusive AddressUserName ProvideInfo
+mutualExclusive AddressUserName InformUserandandReferToHumanCarer
+mutualExclusive AddressUserName MeetingUser
+mutualExclusive AddressUserName informDaisyAbilities
+
+mutualExclusive AddressSirOrMadam Speaking
+mutualExclusive AddressSirOrMadam RepeatInstruction
+mutualExclusive AddressSirOrMadam ProvideInfo
+mutualExclusive AddressSirOrMadam InformUserandandReferToHumanCarer
+mutualExclusive AddressSirOrMadam MeetingUser
+mutualExclusive AddressSirOrMadam informDaisyAbilities
+
+mutualExclusive Speaking RepeatInstruction
+mutualExclusive Speaking ProvideInfo
+mutualExclusive Speaking InformUserandandReferToHumanCarer
+mutualExclusive Speaking MeetingUser
+mutualExclusive Speaking informDaisyAbilities
+
+mutualExclusive RepeatInstruction ProvideInfo
+mutualExclusive RepeatInstruction InformUserandandReferToHumanCarer
+mutualExclusive RepeatInstruction MeetingUser
+mutualExclusive RepeatInstruction informDaisyAbilities
+
+mutualExclusive ProvideInfo InformUserandandReferToHumanCarer
+mutualExclusive ProvideInfo MeetingUser
+mutualExclusive ProvideInfo informDaisyAbilities
+
+mutualExclusive InformUserandandReferToHumanCarer MeetingUser
+mutualExclusive InformUserandandReferToHumanCarer informDaisyAbilities
+
+mutualExclusive MeetingUser informDaisyAbilities
+
+
+// ===== IpadScreen =====
+mutualExclusive AskRepresentativeForConsent ObtainConsent
+mutualExclusive AskRepresentativeForConsent ConfirmConsent
+mutualExclusive AskRepresentativeForConsent CheckUnderstanding
+mutualExclusive AskRepresentativeForConsent IdentifyDAISYTrust
+mutualExclusive AskRepresentativeForConsent PresentingReport
+mutualExclusive AskRepresentativeForConsent ProvideConfidenceLevel
+
+mutualExclusive ObtainConsent ConfirmConsent
+mutualExclusive ObtainConsent CheckUnderstanding
+mutualExclusive ObtainConsent IdentifyDAISYTrust
+mutualExclusive ObtainConsent PresentingReport
+mutualExclusive ObtainConsent ProvideConfidenceLevel
+
+mutualExclusive ConfirmConsent CheckUnderstanding
+mutualExclusive ConfirmConsent IdentifyDAISYTrust
+mutualExclusive ConfirmConsent PresentingReport
+mutualExclusive ConfirmConsent ProvideConfidenceLevel
+
+mutualExclusive CheckUnderstanding IdentifyDAISYTrust
+mutualExclusive CheckUnderstanding PresentingReport
+mutualExclusive CheckUnderstanding ProvideConfidenceLevel
+
+mutualExclusive IdentifyDAISYTrust PresentingReport
+mutualExclusive IdentifyDAISYTrust ProvideConfidenceLevel
+
+mutualExclusive PresentingReport ProvideConfidenceLevel
+
+
+// ===== CallLine =====
+mutualExclusive RequestHumanAgent CallSupport
+mutualExclusive RequestHumanAgent ReferToHumanExaminer
+mutualExclusive CallSupport ReferToHumanExaminer
+
+
+// ===== VitalDevices (oximeter, thermometer) =====
+mutualExclusive PreparingExamination ExamineState
+mutualExclusive PreparingExamination ExaminingPatient
+mutualExclusive ExamineState ExaminingPatient
+
+relation_end

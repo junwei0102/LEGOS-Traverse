@@ -74,7 +74,7 @@ rule_start
     R7 when UserWantsToCook then CheckTemperature within [2 minutes, 4 minutes]
     R7_1 when CheckTemperature and {hazardDetected} then InformUser within [2 minutes, 5 minutes]
     R8 when FoodPreparation then TrackTime within [1 minutes, 2 minutes]
-    R8_1 when TrackTime then InformUser within [5 minutes, 10 minutes]
+    R8_1 when TrackTime then InformUser within [1 minutes, 3 minutes]
     R9 when MeetingUser then CollectandRecordInformation within [2 minutes, 5 minutes]
     R9_1 when AgentDeployed then UpdateInformation within [5 minutes, 10 minutes]
     R10 when GiveSuggestion then ConsiderUserPractices within [1 minutes, 2 minutes]
@@ -98,3 +98,64 @@ rule_start
     R21_3 when FireSafetyMeasures then AskUserIfOK within [2 minutes, 5 minutes]
     R21_4 when FireSafetyMeasures then InformCaregiver within [1 minutes, 3 minutes]
 rule_end
+
+relation_start
+    // ===== Speech =====
+    mutualExclusive MeetingUser InformUser
+    mutualExclusive MeetingUser AskForDetailLevelOfInstructions
+    mutualExclusive MeetingUser CalibrateSpeech
+    mutualExclusive MeetingUser RemindUserOfLimitations
+    mutualExclusive MeetingUser AskForEmergencyContact
+    mutualExclusive MeetingUser AskUserIfOK
+    mutualExclusive MeetingUser GiveSuggestion
+    mutualExclusive MeetingUser GivingCookingInstructions
+
+    mutualExclusive InformUser AskForDetailLevelOfInstructions
+    mutualExclusive InformUser CalibrateSpeech
+    mutualExclusive InformUser RemindUserOfLimitations
+    mutualExclusive InformUser AskForEmergencyContact
+    mutualExclusive InformUser AskUserIfOK
+    mutualExclusive InformUser GiveSuggestion
+    mutualExclusive InformUser GivingCookingInstructions
+
+    mutualExclusive AskForDetailLevelOfInstructions CalibrateSpeech
+    mutualExclusive AskForDetailLevelOfInstructions RemindUserOfLimitations
+    mutualExclusive AskForDetailLevelOfInstructions AskForEmergencyContact
+    mutualExclusive AskForDetailLevelOfInstructions AskUserIfOK
+    mutualExclusive AskForDetailLevelOfInstructions GiveSuggestion
+    mutualExclusive AskForDetailLevelOfInstructions GivingCookingInstructions
+
+    mutualExclusive CalibrateSpeech RemindUserOfLimitations
+    mutualExclusive CalibrateSpeech AskForEmergencyContact
+    mutualExclusive CalibrateSpeech AskUserIfOK
+    mutualExclusive CalibrateSpeech GiveSuggestion
+    mutualExclusive CalibrateSpeech GivingCookingInstructions
+
+    mutualExclusive RemindUserOfLimitations AskForEmergencyContact
+    mutualExclusive RemindUserOfLimitations AskUserIfOK
+    mutualExclusive RemindUserOfLimitations GiveSuggestion
+    mutualExclusive RemindUserOfLimitations GivingCookingInstructions
+
+    mutualExclusive AskForEmergencyContact AskUserIfOK
+    mutualExclusive AskForEmergencyContact GiveSuggestion
+    mutualExclusive AskForEmergencyContact GivingCookingInstructions
+
+    mutualExclusive AskUserIfOK GiveSuggestion
+    mutualExclusive AskUserIfOK GivingCookingInstructions
+
+    mutualExclusive GiveSuggestion GivingCookingInstructions
+
+
+    // ===== Call =====
+    mutualExclusive InformCaregiver CallEmergencyServices
+
+
+    // ===== ArmGripper =====
+    mutualExclusive OpenWindows InterfereSafely
+    mutualExclusive OpenWindows GiveUserDangerousObjects
+    mutualExclusive InterfereSafely GiveUserDangerousObjects
+
+
+    // ===== DisplayScreen =====
+    mutualExclusive ProvideDataSummaries ShowDataHistory
+relation_end
